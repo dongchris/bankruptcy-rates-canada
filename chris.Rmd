@@ -98,12 +98,13 @@ for(i in 0:3){
   }
   }
 }
-save(result, orderlist, file = "bank.Rmd")
+save(result, orderlist, file = "bank.RData")
 ```
 
 ```{r}
 load(file = "bank.RData")
 ```
+
 
 ```{r}
 names(result) <- unlist(orderlist)
@@ -171,13 +172,8 @@ for(i in seq(0.05,1, by = 0.05)){
 save(hwresult, hworderlist, file = "holt.RData")
 ```
 
-```{r}
-load(file = "holt.RData")
-```
 
 ```{r}
-names(hwresult) <- unlist(hworderlist)
-holt_add <- hwresult
 head(holt_add[order(holt_add)], n = 10)
 ```
 
@@ -204,12 +200,6 @@ save(hwresult, hworderlist, file = "holt2.RData")
 ```
 
 ```{r}
-load(file = "holt2.RData")
-```
-
-```{r}
-names(hwresult) <- unlist(hworderlist)
-holt_mult <- hwresult
 head(holt_mult[order(holt_mult)], n = 10)
 ```
 
