@@ -1,0 +1,106 @@
+---
+title: "project"
+author: "Chen Wang"
+date: "11/28/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(forecast)
+library(tseries)
+library(lmtest)
+library(car)
+```
+
+Load the dataset
+```{r}
+data_ts <- read.csv('/users/grace/desktop/msan/timeseries/project/train.csv', header = T)
+#partition the data
+bankruptcy <- ts(data_ts$Bankruptcy_Rate, start=c(1987,1),end = c(2010,12), frequency=12)
+train <-window(bankruptcy, start = c(1987, 1), end = c(2008,12))
+valid <- window(bankruptcy, start = c(2009, 1))
+```
+plot the ts
+```{r}
+plot(train)
+```
+
+Holt-Winters
+
+Model without specifying parameters
+
+Addictive model
+```{r}
+m0 <- HoltWinters(train,alpha = 0.1, beta = 0.15, gamma = 0.6,  seasonal = 'add')
+#m0
+```
+
+Addictive on log-transformed data
+```{r}
+m1 <- HoltWinters(log(train),alpha = 0.1, beta = 0.1, gamma = 0.6,  seasonal = 'add')
+#m1
+```
+
+Multiplicative model
+```{r}
+m2 <- HoltWinters(train,alpha = 0.1, beta = 0.1, gamma = 0.6,  seasonal = 'mult')
+#m2
+```
+
+```{r}
+predict_rmse <- function(model,log = FALSE,testset,n=24){
+  pred <-forecast(model, h=n, level = 95)
+  if (log ==TRUE){
+    return (sqrt(mean((exp(pred$mean)-testset)^2)))
+  }else{
+    return (sqrt(mean((pred$mean-testset)^2)))
+    }
+}
+```
+
+
+```{r}
+predict_rmse(m0,testset = valid)
+predict_rmse(m1,log = TRUE, testset = valid)
+predict_rmse(m2,testset = valid)
+```
+
+```{r}
+m.fit <- forecast(m2, h=24, level = 95)
+
+plot(bankruptcy, main = 'Predictions using Holt-Winters') 
+# adding a vertical line at the point where prediction starts
+abline(v=2009,col='blue',lty=2)
+# plotting the predict
+lines(m.fit$mean,type='l',col='red')
+# plotting lower limit of the prediction interval
+lines(ts(m.fit$lower, start = c(2009,1), frequency = 12),type='l',col='green') 
+# plotting upper limit of the  prediction interval
+lines(ts(m.fit$upper, start = c(2009,1), frequency = 12),type='l',col='green')
+```
+
+
+
+STL Decomposition 
+https://robjhyndman.com/eindhoven/1-3-Seasonality.pdf
+```{r}
+fit <- stl(train, t.window=48, s.window=6, robust=TRUE)
+fcast <- forecast(fit, method = 'naive', h =24, level = 95)
+plot(bankruptcy, main = 'Predictions using STL') 
+# adding a vertical line at the point where prediction starts
+abline(v=2009,col='blue',lty=2)
+# plotting the predict
+lines(fcast$mean,type='l',col='red')
+# plotting lower limit of the prediction interval
+lines(ts(fcast$lower, start = c(2009,1), frequency = 12),type='l',col='green') 
+# plotting upper limit of the  prediction interval
+lines(ts(fcast$upper, start = c(2009,1), frequency = 12),type='l',col='green')
+sqrt(mean((fcast$mean-valid)^2))
+```
+
+
+
+
+
+
