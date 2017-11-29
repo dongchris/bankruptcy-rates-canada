@@ -87,7 +87,7 @@ https://robjhyndman.com/eindhoven/1-3-Seasonality.pdf
 ```{r}
 fit <- stl(train, t.window=48, s.window=6, robust=TRUE)
 fcast <- forecast(fit, method = 'naive', h =24, level = 95)
-plot(bankruptcy, main = 'Predictions using Holt-Winters') 
+plot(bankruptcy, main = 'Predictions using STL') 
 # adding a vertical line at the point where prediction starts
 abline(v=2009,col='blue',lty=2)
 # plotting the predict
