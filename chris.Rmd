@@ -1,0 +1,132 @@
+---
+title: "Forecasting Bankruptcy Rates"
+author: "Chris Dong"
+date: "November 28, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = T, warning = F, message = F)
+```
+
+#### Libaries
+```{r, warning = F, message = F}
+library(tseries)
+library(car)
+library(forecast)
+library(tidyverse)
+library(magrittr)
+```
+
+### Loading Data
+```{r, warning = F, message = F}
+train <- read_csv("train.csv")
+test <- read_csv("test.csv")
+
+train %<>% na.omit()
+bank <-ts(train$Bankruptcy_Rate, start = c(1987, 1), end =c(2010, 12), frequency = 12)
+```
+
+### Create Training and Validation Set
+```{r}
+bank.train <- window(bank, start = c(1987,1), end = c(2008,12))
+bank.test <- window(bank, start = c(2009,1), end = c(2010,12))
+```
+
+```{r}
+plot(log(bank.train))
+```
+
+```{r}
+adf.test(bank.train)
+```
+
+```{r}
+bank.train1 <- diff(bank.train)
+```
+
+```{r}
+adf.test(bank.train1)$p.value
+```
+
+```{r}
+bank.train2 <- diff(bank.train1, lag = 12)
+```
+
+Trying `auto.arima` as baseline
+```{r}
+automl <- arima(log(bank.train), order = c(2,0,1),
+      seasonal = list(order = c(0,0,2), method = "ML"))
+sqrt(mean((exp(forecast(automl, level = 95, h = 24)$mean) - bank.test)^2))
+```
+
+```{r, eval = F}
+result <-c()
+orderlist = list()
+
+for(i in 0:3){
+  for(j in 0:3){
+    for(a in 0:3){
+      for(b in 0:3){
+        
+        orderlist <- c(orderlist, paste(i,j,a,b))
+        bankmodel <- tryCatch({expr = arima(log(bank.train), order = c(i,1,j), 
+          seasonal = list(order = c(a,1,b), period = 12), method = "ML")},
+          error = function(cond) {return(NA)})
+        
+        rmse <- sqrt(mean((exp(forecast(bankmodel, 
+                level = 95, h = 24)$mean) - bank.test)^2))
+        print(paste(i,j,a,b, ":", rmse))
+        ifelse(!is.na(bankmodel), result <- c(result, rmse), 
+               result <- c(result, NA))
+  }
+  }
+  }
+}
+save(result, orderlist, file = "bank.Rmd")
+```
+
+```{r}
+load(file = "bank.RData")
+```
+
+```{r}
+names(result) <- unlist(orderlist)
+head(result[order(result)], n = 25)
+```
+
+```{r}
+m1 <- arima(log(bank.train), order = c(0,1,3), seasonal = list(order = c(2,1,3), period = 12), method = "ML")
+m2 <- arima(log(bank.train), order = c(0,1,3), seasonal = list(order = c(3,1,3), period = 12), method = "ML")
+D <- -2*(m1$loglik - m2$loglik)
+pval <- 1-pchisq(D,length(m2$coef) - length(m1$coef))
+print(c("Test Statistic:",round(D, 4),"P-value:", round(pval, 4)))
+```
+
+SARIMA(0,1,3)(2,1,3) better than SARIMA(0,1,3)(3,1,3)
+
+```{r}
+m1 <- arima(log(bank.train), order = c(0,1,2), seasonal = list(order = c(2,1,3), period = 12), method = "ML")
+m2 <- arima(log(bank.train), order = c(0,1,3), seasonal = list(order = c(2,1,3), period = 12), method = "ML")
+D <- -2*(m1$loglik - m2$loglik)
+pval <- 1-pchisq(D,length(m2$coef) - length(m1$coef))
+print(c("Test Statistic:",round(D, 4),"P-value:", round(pval, 4)))
+```
+
+SARIMA(0,1,3)(2,1,3) better than SARIMA(0,1,2)(2,1,3)
+
+```{r}
+rmse <- function(logmodel) sqrt(mean((exp(forecast(logmodel, level = 95, h = 24)$mean) - bank.test)^2))
+```
+
+```{r}
+model <-  arima(log(bank.train), order = c(0,1,3), seasonal = list(order = c(2,1,3), period = 12), method = "ML")
+(score <- rmse(model))
+```
+
+So far, an SARIMA(0,1,3)(2,1,3) gets a RMSE of `r score` when forecasting from January 2009 to December 2010.
+
+
+
+
+
