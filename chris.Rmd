@@ -18,6 +18,7 @@ library(car)
 library(forecast)
 library(tidyverse)
 library(magrittr)
+library(ggcorrplot)
 ```
 
 ### Loading Data
@@ -27,12 +28,24 @@ test <- read_csv("test.csv")
 
 train %<>% na.omit()
 bank <-ts(train$Bankruptcy_Rate, start = c(1987, 1), end =c(2010, 12), frequency = 12)
+house <-ts(train$House_Price_Index, start = c(1987, 1), 
+           end =c(2010, 12), frequency = 12)
+unemployment <- ts(train$Unemployment_Rate, start = c(1987, 1), 
+           end =c(2010, 12), frequency = 12)
+population <- ts(train$Population, start = c(1987, 1), 
+           end =c(2010, 12), frequency = 12)
 ```
 
 ### Create Training and Validation Set
 ```{r}
 bank.train <- window(bank, start = c(1987,1), end = c(2008,12))
 bank.test <- window(bank, start = c(2009,1), end = c(2010,12))
+house.train <- window(bank, start = c(1987,1), end = c(2008,12))
+house.test <- window(bank, start = c(2009,1), end = c(2010,12))
+unemployment.train <- window(unemployment, start = c(1987,1), end = c(2008,12))
+unemployment.test <- window(unemployment, start = c(2009,1), end = c(2010,12))
+population.train <- window(population, start = c(1987,1), end = c(2008,12))
+population.test <- window(population, start = c(2009,1), end = c(2010,12))
 ```
 
 ```{r}
@@ -128,7 +141,172 @@ model <-  arima(log(bank.train), order = c(0,1,3), seasonal = list(order = c(2,1
 
 So far, an SARIMA(0,1,3)(2,1,3) gets a RMSE of `r score` when forecasting from January 2009 to December 2010.
 
+## Holt-Winters
+
+```{r}
+hw <- HoltWinters(x = log(bank.train),seasonal = "add",
+        alpha = 0.2, beta = 0.2, gamma = 0.4) 
+rmse(hw)
+```
+
+## Additive Triple Exponential Smoothing
+```{r, eval = F}
+hwresult <-c()
+hworderlist = list()
+
+for(i in seq(0.05,1, by = 0.05)){
+  for(j in seq(0.05,1, by = 0.05)){
+    for(a in seq(0.05,1, by = 0.05)){
+        
+        hworderlist <- c(hworderlist, paste(i,j,a))
+        bankmodel <- HoltWinters(x = log(bank.train),seasonal = "add",
+                     alpha = i, beta = j, gamma = a) 
+        measure <- rmse(bankmodel)
+        print(paste(i,j,a, ":", measure))
+        hwresult <- c(hwresult, measure)
+  
+  }
+  }
+}
+save(hwresult, hworderlist, file = "holt.RData")
+```
+
+```{r}
+load(file = "holt.RData")
+```
+
+```{r}
+names(hwresult) <- unlist(hworderlist)
+holt_add <- hwresult
+head(holt_add[order(holt_add)], n = 10)
+```
+
+## Multiplicative Triple Exponential Smoothing
+```{r, eval = F}
+hwresult <-c()
+hworderlist = list()
+
+for(i in seq(0.05,1, by = 0.05)){
+  for(j in seq(0.05,1, by = 0.05)){
+    for(a in seq(0.05,1, by = 0.05)){
+        
+        hworderlist <- c(hworderlist, paste(i,j,a))
+        bankmodel <- HoltWinters(x = log(bank.train),seasonal = "mult",
+                     alpha = i, beta = j, gamma = a) 
+        measure <- rmse(bankmodel)
+        print(paste(i,j,a, ":", measure))
+        hwresult <- c(hwresult, measure)
+  
+  }
+  }
+}
+save(hwresult, hworderlist, file = "holt2.RData")
+```
+
+```{r}
+load(file = "holt2.RData")
+```
+
+```{r}
+names(hwresult) <- unlist(hworderlist)
+holt_mult <- hwresult
+head(holt_mult[order(holt_mult)], n = 10)
+```
+
+```{r}
+#save(result, holt_add, holt_mult, file = "bank.RData")
+```
+
+Multivariate
+
+#### Correlation Matrix
+```{r}
+train[,-1] %>% na.omit() %>% cor() %>% ggcorrplot(lab = T)
+```
+
+# SARIMAX
+```{r}
+model.population <-  arima(log(bank.train), order = c(0,1,3), 
+                seasonal = list(order = c(2,1,3), period = 12), 
+                method = "ML",
+                xreg = data.frame(population.train))
+```
+
+```{r}
+(score2 <- sqrt(mean((exp(forecast(model.population, level = 95, h = 24,
+                xreg = data.frame(population.test))$mean) - bank.test)^2)))
+```
+
+Population improved RSME from `r score` to `r score2`.
+
+### Trying Population + Housing Price Index
+```{r}
+model.unemploy.pop <-  arima(log(bank.train), order = c(0,1,3), 
+                seasonal = list(order = c(2,1,3), period = 12), 
+                method = "ML",
+                xreg = data.frame(population.train, house.train))
+```
+
+```{r}
+(score3 <- sqrt(mean((exp(forecast(model.unemploy.pop, level = 95, h = 24,
+                xreg = data.frame(population.test, house.test))$mean) - bank.test)^2)))
+```
+
+## Comparing Population and (Housing + Population) with Log-Likelihood Test
+
+```{r}
+D <- -2*(model.population$loglik - model.unemploy.pop$loglik)
+pval <- 1-pchisq(D,length(model.unemploy.pop$coef) - length(model.population$coef))
+print(c("Test Statistic:",round(D, 4),"P-value:", round(pval, 4)))
+```
+
+Having both variables is indeed better.
+
+### Trying three variables
+
+```{r}
+model.allthree <-  arima(log(bank.train), order = c(0,1,3), 
+                seasonal = list(order = c(2,1,3), period = 12), 
+                method = "ML",
+                xreg = data.frame(population.train, house.train, unemployment.train))
+```
+
+```{r}
+(score4 <- sqrt(mean((exp(forecast(model.allthree, level = 95, h = 24,
+                xreg = data.frame(population.test, house.test,
+                                  unemployment.test))$mean) - bank.test)^2)))
+```
+
+Doesn't seem better, let's try running a log-likelihood test
+
+```{r}
+D <- -2*(model.unemploy.pop$loglik - model.allthree$loglik)
+pval <- 1-pchisq(D,length(model.allthree$coef) - length(model.unemploy.pop$coef))
+print(c("Test Statistic:",round(D, 4),"P-value:", round(pval, 4)))
+```
+
+Taking the log of Population
+```{r}
+model.unemploy.pop.log <-  arima(log(bank.train), order = c(0,1,3), 
+                seasonal = list(order = c(2,1,3), period = 12), 
+                method = "ML",
+                xreg = data.frame(log(population.train), house.train))
+(score3.log <- sqrt(mean((exp(forecast(model.unemploy.pop.log, level = 95, h = 24,
+                xreg = data.frame(log(population.test), house.test))$mean) - bank.test)^2)))
+```
+
+```{r}
+model.unemploy.pop.log2 <-  arima(log(bank.train), order = c(0,1,3), 
+                seasonal = list(order = c(2,1,3), period = 12), 
+                method = "ML",
+                xreg = data.frame(log(population.train), log(house.train)))
+(score3.log2 <- sqrt(mean((exp(forecast(model.unemploy.pop.log2, level = 95, h = 24,
+                xreg = data.frame(log(population.test), log(house.test)))$mean) - bank.test)^2)))
+```
+
+Why is this so low..? Any Ideas?
 
 
+# Current Best Model
 
-
+**The best model so far is a SARIMAX (0,1,3)(2,1,3) along with the explanatory variables Population and Housing Price Index. It has a RMSE of `r score3.log`.**
