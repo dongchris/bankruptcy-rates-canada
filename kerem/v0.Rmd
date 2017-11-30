@@ -292,5 +292,93 @@ paste(c('p:', 'q:', 'P:', 'Q:'), best.comb)
 plot(sarima.preds)
 ```
 
+## SARIMAX MODEL
+
+Use exgenous data, assuming that there is a uni-directional relationship, meaning only independent variables effect bankruptcy not the other way around.
+
+We will use lagged 23 value of housing index, since it holds the highest correlation with bankcruptcy...
+
+```{r}
+out_years <- 0 # years to exclude
+train <- read.csv('train.csv')[1:288,]
+test <- read.csv('test.csv')
+h <- 0 # lag to use
+train$House_Price_Index <- lag(train$House_Price_Index, n = h)
+exo_endo_train <- train[(h + 1) + (out_years*12):264, ]
+exo_endo_valid <- train[265:288, ]
+```
+
+
+```{r}
+names(exo_endo_train)
+```
+
+
+
+```{r}
+valid_rmse <- function(model, valid_ts){
+  valid.preds <- forecast(model, h = length(valid_ts),xreg = exo_endo_valid[c("Population", "House_Price_Index")])
+  valid.rmse <- rmse(as.numeric(valid.preds$mean), valid_ts)
+  return(valid.rmse)
+}
+
+
+P <- c(0, seq(3))
+Q <- c(0, seq(5))
+p <- c(0, seq(2))
+q <- c(0, seq(3))
+
+comb <- expand.grid('p' = p, 'q' = q, 'P' = P, 'Q' = Q)
+
+
+best.rmse <- Inf
+best.comb <- NA
+for (i in 1:nrow(comb)){
+  p <- comb[i, 'p']
+  q <- comb[i, 'q']
+  P <- comb[i, 'P']
+  Q <- comb[i, 'Q']
+  
+  model <- arima(ts(exo_endo_train$Bankruptcy_Rate, frequency = 12), order = c(p, 1, q), seasonal = list(order = c(P, 1, Q), period = 12),
+                 method = 'CSS', xreg = exo_endo_train[c("Population", "House_Price_Index")])
+  
+  val_rmse <- valid_rmse(model, exo_endo_valid$Bankruptcy_Rate)
+  if (val_rmse < best.rmse){
+    best.rmse <- val_rmse
+    best.comb <- c(p, q, P, Q) 
+  }
+}
+```
+
+
+```{r}
+# best with all data sarimax 
+best.rmse
+best.comb
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
