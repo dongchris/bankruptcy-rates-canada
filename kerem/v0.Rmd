@@ -1,0 +1,296 @@
+---
+title: "Untitled"
+author: "Kerem Turgutlu"
+date: "November 26, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, cache = T)
+```
+
+```{r}
+library(tidyverse)
+library(forecast)
+library(lawstat)
+library(tseries)
+```
+
+
+
+```{r}
+train <- read.csv('train.csv')[1:288,]
+test <- read.csv('test.csv')
+```
+
+```{r}
+train %>% glimpse()
+```
+
+
+```{r}
+train_ts <- ts(train,start = 1987, frequency = 12)
+test_ts <- ts(test, start = 2011, frequency = 12)
+```
+
+
+```{r}
+plot(train_ts)
+```
+
+There is great correlation between House_Price_Index and Bankruptcy_Rate, probably even a higher one with lagged values of House_Price_Index.
+
+
+```{r}
+cor(train)
+```
+
+
+```{r}
+lagged.cor <- c()
+
+h = 50
+for (i in (seq(h))){
+  lagged_house <- lag(train$House_Price_Index, n = i)
+  cor.i <- cor(lagged_house, train$Bankruptcy_Rate, use = 'complete.obs')
+  lagged.cor <- c(lagged.cor, cor.i)
+}
+```
+
+
+## Lagged Correlation Plot h vs Correlation
+
+```{r}
+best.idx <- which.max(lagged.cor)
+plot(lagged.cor)
+points(best.idx, lagged.cor[best.idx], col='red')
+title(paste('Best Lag:' , best.idx,'House_Price_Index VS Bankruptcy_Rate'))
+```
+
+
+## SARIMA MODEL (Univariate Bankruptcy)
+
+```{r}
+bankruptcy_ts <- ts(train$Bankruptcy_Rate, frequency = 12)
+```
+
+24 years data...
+
+```{r}
+length(bankruptcy_ts) /12
+```
+
+#### Split train - valid (Last 2 Years as Valid)
+
+
+```{r}
+bank.train.ts <- ts(bankruptcy_ts[1:264], frequency = 12)
+bank.valid.ts <- ts(bankruptcy_ts[265:288], frequency = 12)
+```
+
+#### Plot Training
+
+```{r}
+plot(bank.train.ts)
+```
+
+Try log transform, looks better.
+
+```{r}
+bank.train.ts.log <- log(bank.train.ts)
+bank.valid.ts.log <- log(bank.valid.ts)
+plot(log(bank.train.ts))
+```
+
+
+Do 1 diff
+
+```{r}
+ndiffs(bank.train.ts.log)
+bank.train.ts.log.D10 <- diff(bank.train.ts.log)
+ndiffs(bank.train.ts.log.D10)
+nsdiffs(bank.train.ts.log.D10)
+```
+
+There seem to be no seasonality and ts is now stationary
+
+d = 2 makes time series stationary...
+
+```{r}
+adf.test(bank.train.ts.log.D10, k = 48)
+adf.test(diff(bank.train.ts.log.D10), k = 48)
+bank.train.ts.log.D20 <-  diff(bank.train.ts.log.D10)
+```
+
+Pick p, q, p <= 5, q <= 2
+
+```{r}
+acf(bank.train.ts.log.D20, lag.max = 48)
+```
+
+```{r}
+pacf(bank.train.ts.log.D20, 48)
+```
+
+
+
+Check auto.arima and acf plots, if any suggestions try out other models. Model seems reasonable.
+
+```{r}
+auto.arima(bank.train.ts.log, d=1)
+```
+
+```{r}
+arima.model.312.100 <- arima(bank.train.ts.log, order = c(3, 1, 2), seasonal = c(1, 0, 0))
+```
+
+Define rmse and make predictions
+
+```{r}
+#rmse
+rmse <- function(true, preds){return(sqrt(mean((true - preds)**2)))}
+
+#preds
+valid.preds <- forecast(arima.model.312.100, length(bank.valid.ts))
+valid.rmse <- rmse(as.numeric(exp(valid.preds$mean)), bank.valid.ts)
+paste(valid.rmse)
+```
+
+```{r}
+#plot predictions
+plot(valid.preds)
+```
+
+
+## Search for optimal p, q based on rmse on validation
+
+ARIMA model gives the best result with params: p  = 3, q = 1, d = 2, rmse ~ 0.00520
+
+```{r}
+valid_rmse <- function(model, valid_ts){
+  valid.preds <- forecast(model, length(valid_ts))
+  valid.rmse <- rmse(as.numeric(exp(valid.preds$mean)), exp(valid_ts))
+  return(valid.rmse)
+}
+
+
+p <- seq(5)
+q <- seq(2)
+comb <- expand.grid(p, q)
+names(comb) <- c('p', 'q')
+for (i in 1:nrow(comb)){
+  p <- comb[i, 'p']
+  q <- comb[i, 'q']
+  print(paste(p, q))
+  model <- arima(bank.train.ts.log, order = c(p, 2, q), seasonal = c(0, 0, 0))
+  val_rmse <- valid_rmse(model, bank.valid.ts.log)
+  print(val_rmse)
+  cat('\n')
+}
+```
+
+
+Build best model check forecasts
+
+```{r}
+best.model <- arima(bank.train.ts.log, order = c(3, 2, 1), seasonal = c(0, 0, 0))
+arima.preds <- forecast(best.model, h = length(bank.valid.ts.log))
+plot(valid.preds)
+```
+
+
+## Subset time series for SARIMA model
+
+
+```{r}
+# number of years to discard from 24 years
+# we can search for optimal years to discard by search
+out_years = 12
+sub.bank.train.ts <- ts(bankruptcy_ts[(out_years*12):264], frequency = 12)
+bank.valid.ts <- ts(bankruptcy_ts[265:288], frequency = 12)
+
+plot(sub.bank.train.ts)
+```
+
+```{r}
+adf.test(sub.bank.train.ts, k = 12)
+```
+
+d = 1, D = 3 or 4
+
+```{r}
+adf.test(diff(diff(sub.bank.train.ts, lag = 4)), k=12)
+```
+
+We have to timeseries with 1 trend diff and either 1 3 or 4 lagged seasonal diff
+
+```{r}
+sub.bank.train.ts.D11_3 <- diff(diff(sub.bank.train.ts, lag = 3))
+sub.bank.train.ts.D11_4 <- diff(diff(sub.bank.train.ts, lag = 4))
+```
+
+
+
+For ts with period m = 3 , Q <= 5, q <= 3
+
+```{r}
+acf(sub.bank.train.ts.D11_3)
+```
+
+P <= 3, p <= 2
+
+```{r}
+pacf(sub.bank.train.ts.D11_3)
+```
+
+Do grid search for best params for ts with period = 3
+
+```{r}
+valid_rmse <- function(model, valid_ts){
+  valid.preds <- forecast(model, length(valid_ts))
+  valid.rmse <- rmse(as.numeric(valid.preds$mean), valid_ts)
+  return(valid.rmse)
+}
+
+
+P <- seq(3)
+Q <- seq(5)
+p <- seq(2)
+q <- seq(3)
+
+comb <- expand.grid('p' = p, 'q' = q, 'P' = P, 'Q' = Q)
+
+
+best.rmse <- Inf
+best.comb <- NA
+for (i in 1:nrow(comb)){
+  p <- comb[i, 'p']
+  q <- comb[i, 'q']
+  P <- comb[i, 'P']
+  Q <- comb[i, 'Q']
+  
+  model <- arima(sub.bank.train.ts, order = c(p, 1, q), seasonal = list(order = c(P, 1, Q), period = 12), method = 'CSS')
+  val_rmse <- valid_rmse(model, bank.valid.ts)
+  if (val_rmse < best.rmse){
+    best.rmse <- val_rmse
+    best.comb <- c(p, q, P, Q) 
+  }
+}
+```
+
+Best Model SARIMA (1, 1, 3) (3, 1, 2)
+
+```{r}
+model <- arima(sub.bank.train.ts, order = c(1, 1, 3), seasonal = list(order = c(3, 1, 2), period = 12), method = 'CSS')
+val_rmse <- valid_rmse(model, bank.valid.ts)
+sarima.preds <- forecast(model, h = length(bank.valid.ts))
+paste('best rmse', best.rmse)
+paste(c('p:', 'q:', 'P:', 'Q:'), best.comb)
+```
+
+```{r}
+plot(sarima.preds)
+```
+
+
+
