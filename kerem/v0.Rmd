@@ -252,6 +252,11 @@ valid_rmse <- function(model, valid_ts){
   return(valid.rmse)
 }
 
+```
+
+
+```{r}
+
 
 P <- seq(3)
 Q <- seq(5)
@@ -304,7 +309,7 @@ train <- read.csv('train.csv')[1:288,]
 test <- read.csv('test.csv')
 h <- 0 # lag to use
 train$House_Price_Index <- lag(train$House_Price_Index, n = h)
-exo_endo_train <- train[(h + 1) + (out_years*12):264, ]
+exo_endo_train <- train[(h + 1) + (out_years*12):263, ]
 exo_endo_valid <- train[265:288, ]
 ```
 
@@ -313,15 +318,16 @@ exo_endo_valid <- train[265:288, ]
 names(exo_endo_train)
 ```
 
-
-
 ```{r}
 valid_rmse <- function(model, valid_ts){
   valid.preds <- forecast(model, h = length(valid_ts),xreg = exo_endo_valid[c("Population", "House_Price_Index")])
   valid.rmse <- rmse(as.numeric(valid.preds$mean), valid_ts)
   return(valid.rmse)
 }
+```
 
+
+```{r}
 
 P <- c(0, seq(3))
 Q <- c(0, seq(5))
@@ -358,6 +364,24 @@ best.comb
 ```
 
 
+## VAR MODEL
+
+```{r}
+library(vars)
+# Haven't gotten month to work yet
+month.train <- model.matrix(~factor(rep(seq(1,12), 2009-1987)))
+colnames(month.train) <- c("const", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+month.test <- model.matrix(~factor(rep(seq(1,12), 2011-2009)))
+colnames(month.test) <- c("const", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+
+# VAR model just using endogenous variables
+ts <- ts(exo_endo_train, start = 1987, frequency=12)
+m.var <- VAR(ts, type = "both", lag.max = 10)# exogen = month.train, lag.max = 10)
+f.var <- predict(m.var, ci = 0.95, n.ahead = 24) #dumvar = month.test, n.ahead=24)
+
+rmse(f.var$fcst$Bankruptcy_Rate, exo_endo_valid$Bankruptcy_Rate)
+
+```
 
 
 
