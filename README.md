@@ -3,8 +3,8 @@
 test
 test
 
- 1. List item
+ 1. *List item*
 
 <!--stackedit_data:
-eyJoaXN0b3J5IjpbMTcxMzA0NzY3NCwtMTAxOTA5OTI4OF19
+eyJoaXN0b3J5IjpbOTcxMTU0Mjg4LC0xMDE5MDk5Mjg4XX0=
 -->
