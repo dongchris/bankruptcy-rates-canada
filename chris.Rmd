@@ -40,8 +40,8 @@ population <- ts(train$Population, start = c(1987, 1),
 ```{r}
 bank.train <- window(bank, start = c(1987,1), end = c(2008,12))
 bank.test <- window(bank, start = c(2009,1), end = c(2010,12))
-house.train <- window(bank, start = c(1987,1), end = c(2008,12))
-house.test <- window(bank, start = c(2009,1), end = c(2010,12))
+house.train <- window(house, start = c(1987,1), end = c(2008,12))
+house.test <- window(house, start = c(2009,1), end = c(2010,12))
 unemployment.train <- window(unemployment, start = c(1987,1), end = c(2008,12))
 unemployment.test <- window(unemployment, start = c(2009,1), end = c(2010,12))
 population.train <- window(population, start = c(1987,1), end = c(2008,12))
@@ -107,7 +107,6 @@ load(file = "bank.RData")
 
 
 ```{r}
-names(result) <- unlist(orderlist)
 head(result[order(result)], n = 25)
 ```
 
@@ -155,9 +154,9 @@ rmse(hw)
 hwresult <-c()
 hworderlist = list()
 
-for(i in seq(0.05,1, by = 0.05)){
-  for(j in seq(0.05,1, by = 0.05)){
-    for(a in seq(0.05,1, by = 0.05)){
+for(i in seq(0.001,1, by = 0.001)){
+  for(j in seq(0.001,1, by = 0.001)){
+    for(a in seq(0.001,1, by = 0.001)){
         
         hworderlist <- c(hworderlist, paste(i,j,a))
         bankmodel <- HoltWinters(x = log(bank.train),seasonal = "add",
