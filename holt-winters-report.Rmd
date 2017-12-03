@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Holt-Winters Methods involves an exponentially weighted moving average. In the context of the Canadian bankruptcy rates, our model's predictions are based on averages of previously observed bankruptcy rates, with more weight on recent data. In other words, last month is a better indicator than say, 10 years ago. This makes sense because bankruptcy rates is most certainly going to change over time. Triple Exponential Smoothing is appropriate for forecasting monthly bankruptcy rates for Canada because there is both **trend** and **seasonality**. But, what exactly does do these terms mean? 
 
-**Trend:** A trend exists if there is a long-term increase or decrease in bankruptcy rates. As seen previously, there has been an overall decrease from 1987 to 2010. If a trend does not exist, the pattern would look more or less flat. To put it more simply, trend can be thought of as the *slope*.
+**Trend:** A trend exists if there is a long-term increase or decrease in bankruptcy rates. As seen previously, there has been an overall decrease from 1987 to 2010. If a trend does not exist, the pattern would look more or less flat. To put it more simply, trend can be thought of as the *slope*. We see that the trend is a slow increase with an ending decrease after 2009.
 
 **Seasonality:** Seasonality is when the time series exhibits similar behavior at regular intervals, or *seasons*. Seasons can be quarterly, monthly, day of the week, etc. In our scenario, bankruptcy rates are recorded every month.
 
