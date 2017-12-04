@@ -17,29 +17,34 @@ library(tseries)
 ```
 
 
+In this part of the project we will explore arima, sarima and sarimax models in order to predict bankruptcy rate. Arima or in general sarima models are univariate models which depend on previous time series data and try to predict future values. Through this part we will check these models with their assumptions. Sarimax on the other hand is a multivariate time series model which has the sarima component but also regresses on the given multivariate data at time t.
+
 
 ```{r}
-train <- read.csv('train.csv')[1:288,]
-test <- read.csv('test.csv')
+train <- read.csv('../../../train.csv')[1:288,]
+test <- read.csv('../../../test.csv')
 ```
 
 ```{r}
 train %>% glimpse()
 ```
 
+We separated train and test data as; time series until 2011 and time series after 2011. 
 
 ```{r}
 train_ts <- ts(train,start = 1987, frequency = 12)
 test_ts <- ts(test, start = 2011, frequency = 12)
 ```
 
+Here we can see time series that are provided in training data. House index and population seems to have a positive correlation with bankruptcy where as unemployment has a negative one.
 
 ```{r}
 plot(train_ts)
 ```
 
-There is great correlation between House_Price_Index and Bankruptcy_Rate, probably even a higher one with lagged values of House_Price_Index.
+There is great correlation between House_Price_Index and Bankruptcy_Rate, probably even a higher one with lagged values of House_Price_Index. So, here we plot the change in correlation between bankruptcy and housing index by different lagged values of housing index. Basically what we do here is to shift housing index to the right.
 
+Correlation matrix of multivariate data provided.
 
 ```{r}
 cor(train)
@@ -60,6 +65,8 @@ for (i in (seq(h))){
 
 ## Lagged Correlation Plot h vs Correlation
 
+We observe that highest correlation between housing index and bankruptcy happens to be with 23 lagged version of housing index. Meaning that there might be a pattern that bankruptcy follows from housing index after 23 months of occurence. Of course this is just a hypothetical assumptions which needs to be tried out. Hence, we can try out different lagegd versions of housing index and use it in our sarimax model. Another assumptions we are making with sarimax is that any regressed variable during modeling is an exogenous variable, meaning that they have a uni-directional effect on dependent variable; bankruptcy rate but not the other way around.
+
 ```{r}
 best.idx <- which.max(lagged.cor)
 plot(lagged.cor)
@@ -70,11 +77,13 @@ title(paste('Best Lag:' , best.idx,'House_Price_Index VS Bankruptcy_Rate'))
 
 ## SARIMA MODEL (Univariate Bankruptcy)
 
+Let's start our sarima model. 
+
 ```{r}
 bankruptcy_ts <- ts(train$Bankruptcy_Rate, frequency = 12)
 ```
 
-24 years data...
+We have a total 24 years fo data in our training sample.
 
 ```{r}
 length(bankruptcy_ts) /12
@@ -82,6 +91,7 @@ length(bankruptcy_ts) /12
 
 #### Split train - valid (Last 2 Years as Valid)
 
+Every predictive modeling task has a evaluation metric in order to assess the performance different type of models and in order to pick the best available model that we hope to generalize to our hypothesis. Also during these predictive modeling tasks we create a hold-out set which is also out validation set. We will use last 2 years of our data in order to assess our models with evaluation metric as RMSE. Another important point which shouldn't be forgotten is that one should be careful about not overfitting to the validation set. So here we will also care about less complex models which will helps us avoid overfitting and as well as models that give good performance in validation set meaning that they generalize good enough to reflect the pattern on unseen data.
 
 ```{r}
 bank.train.ts <- ts(bankruptcy_ts[1:264], frequency = 12)
@@ -90,11 +100,13 @@ bank.valid.ts <- ts(bankruptcy_ts[265:288], frequency = 12)
 
 #### Plot Training
 
+Here we observe a change in scale as we move forward in our time series, and this might be a problem during checking the constant variance of residuals, which is an important assumption when we fit our model with MLE. We generally make a transformation and look at the plot again to see if this change doesn't occur anymore; some common transformations are log, square root or in general boxcox transforms. 
+
 ```{r}
 plot(bank.train.ts)
 ```
 
-Try log transform, looks better.
+So we apply a log transform to our data to see if it becomes better in terms of constant variance over time. The change in variance is not as bad as before, so we will proceed our analysis with transformed version of our time series model.
 
 ```{r}
 bank.train.ts.log <- log(bank.train.ts)
@@ -103,7 +115,9 @@ plot(log(bank.train.ts))
 ```
 
 
-Do 1 diff
+During time series modeling another important matter that one should to pay attention is stationarity of data. This is important since ARMA models account for only stationary data, so we will try to decompose our time series first, the decide our parameters p, P, q, Q in order feed our data into a SARIMA model. There other types of models such as exponential smoothing models which takes care seasonality and trend with the given parameters alpha, beta and gamma. But these models are subsets of general sarima models. So it's always better to pay good attention to sarima models since they can be more powerful in terms of capability of capturing many different combinations of patterns.
+
+We are using ndiffs on our log transformed data in order to decide the number of trend differencing we need. One can also apply and ADF test in order to check stationarity of their data before and after applying differences. But readily available functions has these properties in themselves so they come in handy. As seen below solely trusting in these function can also be a naive mistake, for example below nsdiffs suggests we don't require a seasonal differencing but in fact we might need to do it.
 
 ```{r}
 ndiffs(bank.train.ts.log)
@@ -112,15 +126,16 @@ ndiffs(bank.train.ts.log.D10)
 nsdiffs(bank.train.ts.log.D10)
 ```
 
-There seem to be no seasonality and ts is now stationary
-
-d = 2 makes time series stationary...
+We are going check ADF test after 1 trend differencing. It's good practice to take lag as "m\*2 - m\*4" when conducting these tests for stationary since one can misguided with small lagged tests. ADF test suggest that our time series is not stationary so we will need to apply more differencing and check the test again. In fact after applying another trend differencing we are now confident with 99% confidence level that are time series indeed stationary.
 
 ```{r}
 adf.test(bank.train.ts.log.D10, k = 48)
 adf.test(diff(bank.train.ts.log.D10), k = 48)
 bank.train.ts.log.D20 <-  diff(bank.train.ts.log.D10)
 ```
+
+
+Futhermore, now we need to identify our candidates for p, P, q and Q. We will check acf and pacf plots after 2 trend differencing in order find these candidates. Lookng at acf plot we will decide the value for p  and 5 seems to be a reasonable candidate. By looking at pacf we will decide our q value which seems to be 2. But for variety we will try all subset of combinations of these p and q values. Since we didn't require any seasonal differencing we will not search for P and Q.
 
 Pick p, q, p <= 5, q <= 2
 
@@ -132,9 +147,7 @@ acf(bank.train.ts.log.D20, lag.max = 48)
 pacf(bank.train.ts.log.D20, 48)
 ```
 
-
-
-Check auto.arima and acf plots, if any suggestions try out other models. Model seems reasonable.
+Forecast package comes with a nice to use function called auto.arima, we will run it for once to see what it suggest as a canididate model and chceck whether it is very different than what we have decided. As it is seen below auto arima suggests no seasonal differencing as we observed before but one trend differencing. For completeness we will also run this suggested model and calcualte rmse on the validation set.
 
 ```{r}
 auto.arima(bank.train.ts.log, d=1)
@@ -144,7 +157,7 @@ auto.arima(bank.train.ts.log, d=1)
 arima.model.312.100 <- arima(bank.train.ts.log, order = c(3, 1, 2), seasonal = c(1, 0, 0))
 ```
 
-Define rmse and make predictions
+With suggested auto.arima model let's define rmse and make predictions, to see how it perfoms in validation set. So it gives a number around ~0.0077, with AIC ~ -608, BIC ~ -583 and log likelihood ~311. We will compare these results with own model and we will eventually see that even though auto.arima is a handy and fast tool one should use their own insights and check acf, pacf and tests in order to define candidate models.
 
 ```{r}
 #rmse
@@ -156,6 +169,8 @@ valid.rmse <- rmse(as.numeric(exp(valid.preds$mean)), bank.valid.ts)
 paste(valid.rmse)
 ```
 
+This what predicitions on validation set looks like when modeled by suggested auto.arima model.
+
 ```{r}
 #plot predictions
 plot(valid.preds)
@@ -164,7 +179,7 @@ plot(valid.preds)
 
 ## Search for optimal p, q based on rmse on validation
 
-ARIMA model gives the best result with params: p  = 3, q = 1, d = 2, rmse ~ 0.00520
+Here we will do a grid search with our identified p <= 5 and q <=5, later check rmse on validation set. To see how each of these models perform compared to any other. We can also see (p, q) , rmse, aic and loglikelihood of each model from the output. So our own models give best model as ARIMA  parameters: p  = 3, q = 1, d = 2, rmse ~ 0.00520. It has a better rmse on validation set but it's AIC and loglikelihood is worse than what we got from auto.arima. Since our goal is to predict future but not to find the best fit for our data we will be in favor of our own model. Which is infact less complex in terms of p and q selection compared to auto.arima, which is prefered in terms of overfitting. So to wrap it up, we here favor a model which is performing better on unseen data and is less complex. 
 
 ```{r}
 valid_rmse <- function(model, valid_ts){
@@ -185,12 +200,14 @@ for (i in 1:nrow(comb)){
   model <- arima(bank.train.ts.log, order = c(p, 2, q), seasonal = c(0, 0, 0))
   val_rmse <- valid_rmse(model, bank.valid.ts.log)
   print(val_rmse)
+  print(model$aic)
+  print(model$loglik)
   cat('\n')
 }
 ```
 
 
-Build best model check forecasts
+Here we can see our validation predictions.
 
 ```{r}
 best.model <- arima(bank.train.ts.log, order = c(3, 2, 1), seasonal = c(0, 0, 0))
@@ -201,6 +218,9 @@ plot(valid.preds)
 
 ## Subset time series for SARIMA model
 
+In this part we will try out a hypothesis that our data infact is not stable, in other words it has a clear and instant pattern change around at year 10. To overcome this instant change we will take the time series that is after year 10 and use this subset of data in order to come up with a better predictive model. Anyway, our main goal here is to predict the future as good as possible. And our hypothesis is that having this subset will provide us a more generalizable model with better performance on unseen data. One drawback is that we can only compare this method in terms of rmse with our previous models that used full data. Because AIC, BIC or loglikelihood should be compared when time series are modeled with same data.
+
+We will take data after year 12, this was determined after several experiments. We didn't apply any transforms since data seems to have a constant variance over time.
 
 ```{r}
 # number of years to discard from 24 years
@@ -212,38 +232,20 @@ bank.valid.ts <- ts(bankruptcy_ts[265:288], frequency = 12)
 plot(sub.bank.train.ts)
 ```
 
+ADF test is conducted again to see if our time series is indeed stationary.
+
 ```{r}
-adf.test(sub.bank.train.ts, k = 12)
+adf.test(sub.bank.train.ts, k = 24)
 ```
 
-d = 1, D = 3 or 4
+One seasonal and trend differencing seems to be good enough.
 
 ```{r}
-adf.test(diff(diff(sub.bank.train.ts, lag = 4)), k=12)
-```
-
-We have to timeseries with 1 trend diff and either 1 3 or 4 lagged seasonal diff
-
-```{r}
-sub.bank.train.ts.D11_3 <- diff(diff(sub.bank.train.ts, lag = 3))
-sub.bank.train.ts.D11_4 <- diff(diff(sub.bank.train.ts, lag = 4))
+adf.test(diff(diff(sub.bank.train.ts, lag = 12)), k = 12)
 ```
 
 
-
-For ts with period m = 3 , Q <= 5, q <= 3
-
-```{r}
-acf(sub.bank.train.ts.D11_3)
-```
-
-P <= 3, p <= 2
-
-```{r}
-pacf(sub.bank.train.ts.D11_3)
-```
-
-Do grid search for best params for ts with period = 3
+We will do a grid search over p, P, q, Q...
 
 ```{r}
 valid_rmse <- function(model, valid_ts){
@@ -251,13 +253,10 @@ valid_rmse <- function(model, valid_ts){
   valid.rmse <- rmse(as.numeric(valid.preds$mean), valid_ts)
   return(valid.rmse)
 }
-
 ```
 
 
 ```{r}
-
-
 P <- seq(3)
 Q <- seq(5)
 p <- seq(2)
@@ -283,7 +282,9 @@ for (i in 1:nrow(comb)){
 }
 ```
 
-Best Model SARIMA (1, 1, 3) (3, 1, 2)
+
+We observe that best parameters are (1, 1, 3) (3, 1, 2) with rmse of ~ 0.0029 which is lower than what we see during sarima and auto.sarima models. Another important note is that since are main goal is to come up with the best predictive model we choose our optimization method as LSE rather than MLE.
+
 
 ```{r}
 model <- arima(sub.bank.train.ts, order = c(1, 1, 3), seasonal = list(order = c(3, 1, 2), period = 12), method = 'CSS')
@@ -293,20 +294,23 @@ paste('best rmse', best.rmse)
 paste(c('p:', 'q:', 'P:', 'Q:'), best.comb)
 ```
 
+Here we can see our sarima predictions on validation set.
+
 ```{r}
 plot(sarima.preds)
 ```
 
+
+
+
 ## SARIMAX MODEL
 
-Use exgenous data, assuming that there is a uni-directional relationship, meaning only independent variables effect bankruptcy not the other way around.
-
-We will use lagged 23 value of housing index, since it holds the highest correlation with bankcruptcy...
+In this part we will use exgenous data, assuming that there is a uni-directional relationship, meaning only independent variables effect bankruptcy not the other way around. We tried lagged 23 value of housing index, since it holds the highest correlation with bankcruptcy but it doesn't seem to perform better.
 
 ```{r}
 out_years <- 0 # years to exclude
-train <- read.csv('train.csv')[1:288,]
-test <- read.csv('test.csv')
+train <- read.csv('../../../train.csv')[1:288,]
+test <- read.csv('../../../test.csv')
 h <- 0 # lag to use
 train$House_Price_Index <- lag(train$House_Price_Index, n = h)
 exo_endo_train <- train[(h + 1) + (out_years*12):263, ]
@@ -326,6 +330,8 @@ valid_rmse <- function(model, valid_ts){
 }
 ```
 
+
+Again do a grid search over combinations of candidate sarima parameters. Our final best model in sarimax has rmse of ~0.0033 by using exogenous variables; population and house_price_index.
 
 ```{r}
 
@@ -362,39 +368,6 @@ for (i in 1:nrow(comb)){
 best.rmse
 best.comb
 ```
-
-
-## VAR MODEL
-
-```{r}
-library(vars)
-# Haven't gotten month to work yet
-month.train <- model.matrix(~factor(rep(seq(1,12), 2009-1987)))
-colnames(month.train) <- c("const", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-month.test <- model.matrix(~factor(rep(seq(1,12), 2011-2009)))
-colnames(month.test) <- c("const", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-
-# VAR model just using endogenous variables
-ts <- ts(exo_endo_train, start = 1987, frequency=12)
-m.var <- VAR(ts, type = "both", lag.max = 10)# exogen = month.train, lag.max = 10)
-f.var <- predict(m.var, ci = 0.95, n.ahead = 24) #dumvar = month.test, n.ahead=24)
-
-rmse(f.var$fcst$Bankruptcy_Rate, exo_endo_valid$Bankruptcy_Rate)
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
