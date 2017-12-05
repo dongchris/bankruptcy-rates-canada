@@ -98,7 +98,7 @@ title(paste('Best Lag:' , best.idx,'House_Price_Index VS Bankruptcy_Rate'))
 
 ### Lagged Correlation Plot h vs Correlation
 
-We observe that highest correlation between housing index and bankruptcy happens to be with 23 lagged version of housing index. This means that there might be a pattern that bankruptcy follows from housing index after 23 months of occurence. Of course this is just a hypothetical assumptions which needs to be tried out. Hence, we can try out different lagged versions of housing index and use it in our sarimax model. Another assumptions we are making with SARIMAX is that any regressed variable during modeling is an exogenous variable, meaning that they have a uni-directional effect on dependent variable bankruptcy rate but not the other way around.
+We observe that highest correlation between housing index and bankruptcy happens to be with 23 lagged version of housing index. This means that there might be a pattern that bankruptcy follows from housing index after 23 months of occurence. Of course this is just a hypothetical assumptions which needs to be tried out. Hence, we can try out different lagged versions of housing index and use it in our SARIMAX model. Another assumptions we are making with SARIMAX is that any regressed variable during modeling is an exogenous variable, meaning that they have a uni-directional effect on dependent variable bankruptcy rate but not the other way around.
 
 ## SARIMA MODEL (Univariate Bankruptcy)
 
@@ -127,10 +127,10 @@ We are able to pass the ADF Test after performing ordinary differencing once, fo
 
 To calculate the parameters of our final model, we performed a grid search where $p$, $P$, $q$, $Q$ can range from 0 to 3, thus resulting in $4^{4} = 256$ different SARIMA models. For each SARIMA model, we calculated the RSME after forecasting 2 years ahead (24 data points). Then, we formed log-likelihood tests, which help us determine whether or not one model is better than another at a statistically significant level. We strive our models to be as simple as possible to avoid overfitting unseen data. The lower the parameters, the simpler the model will be. 
 
-The best SARIMA model that we ended up choosing is SARIMA (0,1,3)(2,1,3). 
+The best SARIMA model on the full data that we ended up choosing is SARIMA (0,1,3)(2,1,3). 
 
 ```{r, echo = F, fig.height = 4}
-best.sarima <- model <-  arima(log(bank.train), order = c(0,1,3), 
+best.sarima <- arima(log(bank.train), order = c(0,1,3), 
     seasonal = list(order = c(2,1,3), period = 12), method = "ML")
 pred.sarima <- forecast(best.sarima, level = 95, h = 24)
 t.new <- seq(2009,2011,length=25)[1:24]
@@ -144,16 +144,97 @@ lines(exp(pred.sarima$upper)~t.new,col='green')
 legend("topleft", legend = c("Predicted","Lower/Upper Bounds","Actual"), col = c("red","green","black"), lty = 1)
 ```
 
+# Subset SARIMA model
+
+In this part, we will try out a hypothesis that our data in fact is not stable, in other words it has a clear and instant pattern change around after about 10 years. To overcome this instant change, we will take the time series that is after 10 years and use this subset of data in order to come up with a better predictive model. Anyway, our main goal here is to predict the future as good as possible. And our hypothesis is that having this subset will provide us a more generalizable model with better performance on unseen data. One drawback is that we can only compare this method in terms of RMSE with our previous models that used full data. 
+
+We will take data starting December 1998, this was determined after several experiments. We didn't apply any transforms since data seems to have a constant variance over time.
+
+```{r}
+out_years = 12
+
+sub.bank.train.ts <- window(bank, start = c(1998,12), end = c(2008,12))
+
+df_subset <- tk_tbl(sub.bank.train.ts)
+ggplot(df_subset, aes(x=index, y = value )) + geom_line() + xlab("Year") +
+  ylab("Bankruptcy Rates")
+
+```
+
+We perform another grid search and observe that best parameters are (1, 1, 3)(3, 1, 2) with RMSE of ~ 0.0029 which is lower than our SARIMA model on the full data. Another important note is that since are main goal is to come up with the best predictive model we choose our optimization method as LSE rather than MLE.
+
+```{r,fig.height=4}
+subset.sarima <- arima(sub.bank.train.ts, order = c(1, 1, 3),
+    seasonal = list(order = c(3, 1, 2), period = 12), method = 'CSS')
+pred.sarima <- forecast(subset.sarima, level = 95, h = 24)
+t.new <- seq(2009,2011,length=25)[1:24]
+plot(bank,xlim=c(1998,2011), ylim = c(0, 0.08),
+     main = "Subset SARIMA (1,1,3)(3,1,2) (RMSE = 0.00296)",
+     ylab = "Bankruptcy Rates")
+abline(v=2009,col='blue',lty=2)
+lines(pred.sarima$mean~t.new,type='l',col='red')
+lines(pred.sarima$lower~t.new,col='green') 
+lines(pred.sarima$upper~t.new,col='green') 
+legend("topleft", legend = c("Predicted","Lower/Upper Bounds","Actual"), col = c("red","green","black"), lty = 1)
+```
+
 # Checking Box-Jenkins Assumptions
 
-Box-Jenkins models relies on four assumptions regarding the residuals for the models to be valid. 
+Box-Jenkins models relies on four assumptions regarding the residuals (difference between actual - predicted) for the models to be valid. 
 
-- Zero-Mean: 
-- Homoscedasticity
-- Zero-Correlation
-- Normality
+- Zero-Mean: the residuals have a mean of zero
+- Homoscedasticity: the residuals have constant variance
+- Zero-Correlation: the residuals are uncorrelated
+- Normality: the residuals are normally distributed (no need to check for our subset model which is based on Sum of Squares rather than Maximum Likelihood Estimation)
+
+```{r}
+e <- subset.sarima$residuals
+df_residual <- tk_tbl(e)
+ggplot(df_residual, aes(x=index, y = value)) + geom_line() +
+  xlim(2002, 2009)
+```
+
+We can see if the Zero-Mean assumption passes by looking at this plot. The residuals look to be more or less centered around 0, which is good.
+
+```{r}
+par(mfrow=c(1,1))
+plot(window(e, start = c(2003,2), end = c(2008, 12)),
+     main="Residuals vs t", ylab="", type = 'l')
+abline(v=seq(2003,2009), lwd=3, col = "red")
+group <- c(rep(1:6, each = 12))[-72]
+```
+
+Homoscedasticity assumption looks good because the residuals look to be fairly constant over time. The red lines simply divide the time series plot into equal groups, to see if the residuals look more or less the same within each group.
+
+```{r}
+tsdiag(subset.sarima)
+```
+
+The Zero-Correlation looks to be a slight problem starting at lag 4, as we see in the plot at the very bottom.
 
 # SARIMAX
+
+In this part we will use exgenous data, assuming that there is a uni-directional relationship, meaning only independent variables effect bankruptcy not the other way around. We tried lagged 23 value of housing index, since it holds the highest correlation with bankcruptcy but it doesn't seem to perform better.
+
+```{r}
+out_years <- 0 # years to exclude
+
+h <- 0 # lag to use
+train$House_Price_Index <- lag(train$House_Price_Index, n = h)
+exo_endo_train <- train[(h + 1) + (out_years*12):263, ]
+exo_endo_valid <- train[265:288, ]
+```
+
+
+```{r}
+valid_rmse <- function(model, valid_ts){
+  valid.preds <- forecast(model, h = length(valid_ts),xreg = exo_endo_valid[c("Population", "House_Price_Index")])
+  valid.rmse <- rmse(as.numeric(valid.preds$mean), valid_ts)
+  return(valid.rmse)
+}
+```
+
+Again do a grid search over combinations of candidate sarima parameters. Our final best model is SARIMAX(1,1,2)(2,1,5), with a rmse of ~0.00334 by using exogenous variables; population and house_price_index. Overall, this provides a better performance than all of the non-subsetted models with this extra information.
 
 # Holt-Winters Methods
 
@@ -195,5 +276,9 @@ Although this was our best Holt-Winters model, the prediction intervals are quit
 
 Model                 | Root Mean Squared Error 
 --------------------- | -----------------------
-SARIMA (0,1,3)(2,1,3) | 0.00372
+Subset SARIMA (1,1,3)(3,1,2) | 0.00296
+SARIMAX(1,1,2)(2,1,5) | 0.00334
 Additive TES ($\alpha = 0.01, \beta = 1, \gamma = 0.04$)| 0.00335
+SARIMA (0,1,3)(2,1,3) | 0.00372
+
+In the end, we choose to select our best model based on the Root Mean Squared Error. In this case, it is our subsetted model SARIMA (0,1,3)(2,1,3), where we only chose to use points from January 1999 to December 2008. This makes sense practically because the time series behaved differently prior to the year 1999. The assumptions needed for the model are fairly met, though the Zero-Correlation assumption is on the borderline, which isn't too bad.
