@@ -2,6 +2,8 @@
 output:
   pdf_document: default
   html_document: default
+header-includes:
+  - \usepackage[labelformat=empty]{caption}
 ---
 
 ```{r setup, include=FALSE}
@@ -19,9 +21,9 @@ Box-Jenkin models involves statistical theory and modeling to analyze and foreca
 
 So, SARIMAX means *Seasonal Autoregressive Integrated Moving Average with Exogenous Variables*
 
-In this part of the project we will explore ARIMA, SARIMA and SARIMAX models in order to predict bankruptcy rate. ARIMA, or in general, SARIMA models are univariate models which depend on previous time series data and try to predict future values. Through this part we will check these models with their assumptions. SARIMAX on the other hand is a multivariate time series model which has the SARIMA component but also regresses on the given multivariate data at time $t$.
+In this part of the project we will explore ARIMA, SARIMA and SARIMAX models in order to predict bankruptcy rate. ARIMA, or in general, SARIMA models are univariate models which Wdepend on previous time series data and try to predict future values. Through this part we will check these models with their assumptions. SARIMAX on the other hand is a multivariate time series model which has the SARIMA component but also regresses on the given multivariate data at time $t$.
 
-We separated train and test data as time series until 2011 and time series after 2011. 
+We separated the data into a training set [1987-2008] and validation set [2009-2010], which will allow us to evaluate the predictive accuracy of our models before predicting on the unlabelled test set [2011-2012].
 Here we can see time series that are provided in training data. Housing Price Index and Population seems to have a positive correlation with Bankruptcy where as Unemployment has a negative one.
 
 ```{r, warning = F, message = F, include = F}
@@ -54,7 +56,7 @@ population.train <- window(population, start = c(1987,1), end = c(2008,12))
 population.test <- window(population, start = c(2009,1), end = c(2010,12))
 ```
 
-```{r, echo = F, fig.height = 5, warning = F, message = F}
+```{r, echo = F, fig.height = 3.5, warning = F, message = F}
 library(timetk)
 library(gridExtra)
 library(scales)
@@ -75,12 +77,11 @@ grid.arrange(p1,p2,p3,p4)
 
 There is great correlation between ``House_Price_Index`` and ``Bankruptcy_Rate``, probably even a higher one with lagged values of ``House_Price_Index``. So, here we plot the change in correlation between bankruptcy and housing index by different lagged values of housing index. Basically what we do here is to shift housing index to the right.
 
-```{r, echo = F, fig.height = 3.5}
-train[,-1] %>% na.omit() %>% cor() %>% ggcorrplot(lab = T)
-```
+```{r, echo = F, fig.height = 3.75}
+par(mfrow=c(1,2))
+train[,-1] %>% na.omit() %>% cor() %>% ggcorrplot(lab = T) + ggplot2::theme(legend.position = 'top', legend.text = element_text(size =8),
+              axis.text = element_text(size = 8)) 
 
-
-```{r, echo = F, fig.height = 3.5}
 lagged.cor <- c()
 
 h = 50
@@ -93,7 +94,8 @@ for (i in (seq(h))){
 best.idx <- which.max(lagged.cor)
 plot(lagged.cor, ylab = "Lagged Correlation")
 points(best.idx, lagged.cor[best.idx], col='red')
-title(paste('Best Lag:' , best.idx,'House_Price_Index VS Bankruptcy_Rate'))
+title(paste('Best Lag:' , best.idx))
+par(mfrow=c(1,1))
 ```
 
 ### Lagged Correlation Plot h vs Correlation
@@ -102,32 +104,37 @@ We observe that highest correlation between housing index and bankruptcy happens
 
 ## SARIMA MODEL (Univariate Bankruptcy)
 
-Every predictive modeling task has a evaluation metric in order to assess the performance of different type of models and in order to pick the best available model that we hope to generalize to our hypothesis. Also, during these predictive modeling tasks we create a hold-out set which is also our validation set. We will use the last 2 years of our data in order to assess our models with the evaluation metric root mean squared error (RMSE). Another important point which shouldn't be forgotten is that one should be careful about not overfitting to the validation set. So, here we will also care about less complex models which will helps us avoid overfitting and as well as models that give good performance in validation set meaning that they generalize good enough to reflect the pattern on unseen data.
+Every predictive modeling task has a evaluation metric in order to assess the performance of different type of models and in order to pick the best available model that we hope to generalize to our hypothesis. Also, during these predictive modeling tasks we create a hold-out set which is also our validation set. We will use the last 2 years of our data [2009-2010] in order to assess our models with the evaluation metric root mean squared error (RMSE). Another important point which shouldn't be forgotten is that one should be careful about not overfitting to the validation set. So, here we will also care about less complex models which will helps us avoid overfitting and as well as models that give good performance in validation set meaning that they generalize good enough to reflect the pattern on unseen data.
 
-```{r, fig.width = 6}
+```{r, fig.height = 3}
 p5 <- ggplot(df_bank, aes(x=index, y = log(value) )) + geom_line() + xlab("Year") +
   ylab("Log of Bankruptcy Rates")
 grid.arrange(p1,p5)
 ```
 
-Here, we observe a change in scale as we move forward in our time series, and this might be a problem during checking the constant variance of residuals, which is an important assumption when we fit our model with MLE. We generally make a transformation and look at the plot again to see if this change doesn't occur anymore; some common transformations are log, square root or in general boxcox transforms. 
+Here, we observe a change in scale as we move forward in our time series, and this might be a problem during checking the constant variance of residuals (the difference between the true value and the predicted value), which is an important assumption when we fit our model with Maximum Likelihood Estimation (MLE). We generally make a transformation and look at the plot again to see if this change doesn't occur anymore; some common transformations are log, square root or in general boxcox transforms. 
 
 So we apply a log transform to our data to see if it becomes better in terms of constant variance over time. The change in variance is not as bad as before, so we will proceed our analysis with the transformed version of our time series model.
 
-During time series modeling another important matter that one should to pay attention is stationarity of data. This is important since ARMA models account for only stationary data, so we will try to decompose our time series first, then decide our parameters $p$, $P$, $q$, $Q$ in order to feed our data into a SARIMA model. There are other types of models such as exponential smoothing models which takes care of seasonality and trend with the given parameters $\alpha$, $\beta$ and $\gamma$. But these models are subsets of general SARIMA models. So it's always better to pay good attention to SARIMA models since they can be more powerful in terms of capability of capturing many different combinations of patterns. The parameters we are trying to optimized is briefly described below:
+During time series modeling another important matter that one should to pay attention is stationarity of data, which means that the mean and autocovariance functions are not dependent on time *t*. This is important since ARMA models account for only stationary data, so we will try to decompose our time series first, then decide our parameters $p$, $P$, $q$, $Q$ in order to feed our data into a SARIMA model. There are other types of models such as exponential smoothing models which takes care of seasonality and trend with the given parameters $\alpha$, $\beta$ and $\gamma$. But these models are subsets of general SARIMA models. So it's always better to pay good attention to SARIMA models since they can be more powerful in terms of capability of capturing many different combinations of patterns. The parameters we are trying to optimized is briefly described below:
 
-- **p:** parameter for AR within a month
-- **q:** parameter for MA within a month
-- **P:** parameter for AR between months
-- **Q:** parameter for MA between months
+- **p:** parameter for the order of the AR component within a month
+- **q:** parameter for the order of the MA component  within a month
+- **P:** parameter for the order of the AR component  between months
+- **Q:** parameter for the order of the MA component  between months
 
 In order to make our time series stationary, we will use a well-known test called the Augmented Dickey-Fuller Test. Basically, this test will check if the unit roots lie outside the unit circle, which is an indicator of stationarity. 
 
-We are able to pass the ADF Test after performing ordinary differencing once, followed by seasonal differencing. Note, that when performing the ADF Test, we make sure to check 4 years ahead so that we are not misled by the default parameters. After the differencing, we are now confident with 99% confidence level that the time series is indeed stationary.
+We are able to pass the ADF Test after performing ordinary differencing once, followed by seasonal differencing. 
 
-To calculate the parameters of our final model, we performed a grid search where $p$, $P$, $q$, $Q$ can range from 0 to 3, thus resulting in $4^{4} = 256$ different SARIMA models. For each SARIMA model, we calculated the RSME after forecasting 2 years ahead (24 data points). Then, we formed log-likelihood tests, which help us determine whether or not one model is better than another at a statistically significant level. We strive our models to be as simple as possible to avoid overfitting unseen data. The lower the parameters, the simpler the model will be. 
+- *Ordinary differencing*: subtracting observations from the previous observation in time
+- *Seasonal differencing*: subtracting observations from the observation 1 seasonal period in time prior (i.e. 12 months ago)
 
-The best SARIMA model on the full data that we ended up choosing is SARIMA (0,1,3)(2,1,3). 
+Note, that when performing the ADF Test, we make sure to check 4 years ahead so that we are not misled by the default parameters. After the differencing, we are now confident with 99% confidence level that the time series is indeed stationary.
+
+To calculate the parameters of our final model, we performed a grid search where $p$, $P$, $q$, $Q$ can range from 0 to 3, thus resulting in $4^{4} = 256$ different SARIMA models. For each SARIMA model, we calculated the RSME after forecasting 2 years ahead (24 data points). Then, we formed log-likelihood ratio tests, which is a formal test for determining whether or not one model is better than another at a specified statistically significant level. We strive our models to be as simple as possible to avoid overfitting unseen data. The lower the number of parameters (i.e sum of $p$ + $q$ +  $P$ + $Q$ + 1), the simpler the model will be. 
+
+The best SARIMA model on the full data that we ended up choosing is SARIMA (0,1,3)(2,1,3)~12~. 
 
 ```{r, echo = F, fig.height = 4}
 best.sarima <- arima(log(bank.train), order = c(0,1,3), 
@@ -135,22 +142,24 @@ best.sarima <- arima(log(bank.train), order = c(0,1,3),
 pred.sarima <- forecast(best.sarima, level = 95, h = 24)
 t.new <- seq(2009,2011,length=25)[1:24]
 plot(bank,xlim=c(1987,2011), ylim = c(0, 0.08),
-     main = "SARIMA (0,1,3)(2,1,3) (RMSE = 0.00372)",
+     main = "SARIMA (0,1,3)(2,1,3)[12] (RMSE = 0.00372)",
      ylab = "Bankruptcy Rates")
 abline(v=2009,col='blue',lty=2)
+lines(exp(fitted(best.sarima))~seq(1987,2009,
+        length = 265)[1:264],type='l',col=5)
 lines(exp(pred.sarima$mean)~t.new,type='l',col='red')
 lines(exp(pred.sarima$lower)~t.new,col='green') 
 lines(exp(pred.sarima$upper)~t.new,col='green') 
-legend("topleft", legend = c("Predicted","Lower/Upper Bounds","Actual"), col = c("red","green","black"), lty = 1)
+legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
 ```
 
 # Subset SARIMA model
 
-In this part, we will try out a hypothesis that our data in fact is not stable, in other words it has a clear and instant pattern change around after about 10 years. To overcome this instant change, we will take the time series that is after 10 years and use this subset of data in order to come up with a better predictive model. Anyway, our main goal here is to predict the future as good as possible. And our hypothesis is that having this subset will provide us a more generalizable model with better performance on unseen data. One drawback is that we can only compare this method in terms of RMSE with our previous models that used full data. 
+In this part, we will try out a hypothesis that our data in fact is not stable, in other words it has a clear and instant pattern change around after about 10 years. To overcome this instant change, we will take the time series that is after 10 years and use this subset of data in order to come up with a better predictive model. Anyway, our main goal here is to forecast the future values of the time series as well as possible. And our hypothesis is that having this subset will provide us a more generalizable model with better performance on unseen data. One drawback is that we can only compare this method in terms of RMSE with our previous models that used full data, and cannot use a formal test such as likelihood ratio test to compare.
 
 We will take data starting December 1998, this was determined after several experiments. We didn't apply any transforms since data seems to have a constant variance over time.
 
-```{r}
+```{r, fig.height = 2}
 out_years = 12
 
 sub.bank.train.ts <- window(bank, start = c(1998,12), end = c(2008,12))
@@ -161,21 +170,23 @@ ggplot(df_subset, aes(x=index, y = value )) + geom_line() + xlab("Year") +
 
 ```
 
-We perform another grid search and observe that best parameters are (1, 1, 3)(3, 1, 2) with RMSE of ~ 0.0029 which is lower than our SARIMA model on the full data. Another important note is that since are main goal is to come up with the best predictive model we choose our optimization method as LSE rather than MLE.
+We perform another grid search and observe that best parameters are (1, 1, 3)(3, 1, 2)~12~ with RMSE of ~ 0.0029 which is lower than our SARIMA model on the full data. Another important note is that since our main goal is to come up with the best predictive model we choose our optimization method as Least Squares Estimation (LSE) rather than MLE.
 
 ```{r,fig.height=4}
 subset.sarima <- arima(sub.bank.train.ts, order = c(1, 1, 3),
     seasonal = list(order = c(3, 1, 2), period = 12), method = 'CSS')
-pred.sarima <- forecast(subset.sarima, level = 95, h = 24)
+pred.subset.sarima <- forecast(subset.sarima, level = 95, h = 24)
 t.new <- seq(2009,2011,length=25)[1:24]
 plot(bank,xlim=c(1998,2011), ylim = c(0, 0.08),
-     main = "Subset SARIMA (1,1,3)(3,1,2) (RMSE = 0.00296)",
+     main = expression("Subset SARIMA (1,1,3)(3,1,2)"[12] *"(RMSE = 0.00296)"),
      ylab = "Bankruptcy Rates")
 abline(v=2009,col='blue',lty=2)
-lines(pred.sarima$mean~t.new,type='l',col='red')
-lines(pred.sarima$lower~t.new,col='green') 
-lines(pred.sarima$upper~t.new,col='green') 
-legend("topleft", legend = c("Predicted","Lower/Upper Bounds","Actual"), col = c("red","green","black"), lty = 1)
+lines(fitted(subset.sarima)~seq(1999,2009,
+        length = 122)[1:121],type='l',col=5)
+lines(pred.subset.sarima$mean~t.new,type='l',col='red')
+lines(pred.subset.sarima$lower~t.new,col='green') 
+lines(pred.subset.sarima$upper~t.new,col='green') 
+legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
 ```
 
 # Checking Box-Jenkins Assumptions
@@ -185,9 +196,9 @@ Box-Jenkins models relies on four assumptions regarding the residuals (differenc
 - Zero-Mean: the residuals have a mean of zero
 - Homoscedasticity: the residuals have constant variance
 - Zero-Correlation: the residuals are uncorrelated
-- Normality: the residuals are normally distributed (no need to check for our subset model which is based on Sum of Squares rather than Maximum Likelihood Estimation)
+- Normality: the residuals are normally distributed (no need to check for our subset model which is based on Least Squares rather than Maximum Likelihood Estimation)
 
-```{r}
+```{r, fig.height = 2}
 e <- subset.sarima$residuals
 df_residual <- tk_tbl(e)
 ggplot(df_residual, aes(x=index, y = value)) + geom_line() +
@@ -196,7 +207,7 @@ ggplot(df_residual, aes(x=index, y = value)) + geom_line() +
 
 We can see if the Zero-Mean assumption passes by looking at this plot. The residuals look to be more or less centered around 0, which is good.
 
-```{r}
+```{r, fig.height = 3}
 par(mfrow=c(1,1))
 plot(window(e, start = c(2003,2), end = c(2008, 12)),
      main="Residuals vs t", ylab="", type = 'l')
@@ -210,11 +221,13 @@ Homoscedasticity assumption looks good because the residuals look to be fairly c
 tsdiag(subset.sarima)
 ```
 
-The Zero-Correlation looks to be a slight problem starting at lag 4, as we see in the plot at the very bottom.
+The Zero-Correlation looks to be a slight problem starting at lag 4, as we see in the plot at the very bottom. Note that we tested the three assumptions through formal tests and get the same results as indicated above. The Zero-Correlation assumption is satisified if all of the points are above the blue line.
+
+
 
 # SARIMAX
 
-In this part we will use exgenous data, assuming that there is a uni-directional relationship, meaning only independent variables effect bankruptcy not the other way around. We tried lagged 23 value of housing index, since it holds the highest correlation with bankcruptcy but it doesn't seem to perform better.
+In this part we will use exgenous data, assuming that there is a uni-directional relationship, meaning only independent variables effect bankruptcy not the other way around. We tried lagged 23 value of housing index, since it holds the highest correlation with bankcruptcy but it doesn't seem to perform better. 
 
 ```{r}
 out_years <- 0 # years to exclude
@@ -234,7 +247,7 @@ valid_rmse <- function(model, valid_ts){
 }
 ```
 
-Again do a grid search over combinations of candidate sarima parameters. Our final best model is SARIMAX(1,1,2)(2,1,5), with a rmse of ~0.00334 by using exogenous variables; population and house_price_index. Overall, this provides a better performance than all of the non-subsetted models with this extra information.
+Again do a grid search over combinations of candidate sarima parameters. Our final best model is SARIMAX(1,1,2)(2,1,5)~12~, with a rmse of ~0.00334 by using exogenous variables; population and house_price_index. Overall, this provides a better performance than all of the non-subsetted models with this extra information. We did try SARIMAX with our subsetted time series, but it did worse than the non-subsetted model.
 
 # Holt-Winters Methods
 
@@ -242,43 +255,85 @@ Holt-Winters Methods involves an exponentially weighted moving average. In the c
 
 **Trend:** A trend exists if there is a long-term increase or decrease in bankruptcy rates. As seen previously, there has been an overall decrease from 1987 to 2010. If a trend does not exist, the pattern would look more or less flat. To put it more simply, trend can be thought of as the *slope*. We see that the trend is a slow increase with an ending decrease after 2009.
 
-**Seasonality:** Seasonality is when the time series exhibits similar behavior at regular intervals, or *seasons*. Seasons can be quarterly, monthly, day of the week, etc. In our scenario, bankruptcy rates are recorded every month.
+**Seasonality:** Seasonality is when the time series exhibits similar behavior at regular intervals, or *seasons*. Seasons can be quarterly, monthly, day of the week, etc. In our scenario, bankruptcy rates are recorded every month, and therefore the period of a season is 12 months (1 year).
 
-Furthermore, because we decided to explore the logarithm of the bankruptcy rates, we are more concerned about *multiplicative* rather than *additive* methods. The overall concept behind triple exponential smoothing is to apply exponential smoothing and incorporating the level, trend, and seasonal components. While the trend is the *slope*, the level can be treated as the *intercept*.    
+Furthermore, because we choose to use an *additive* method because the size of the peaks are roughly the same throughout the time series. The overall concept behind triple exponential smoothing is to apply exponential smoothing and incorporating the level, trend, and seasonal components. While the trend is the *slope*, the level can be treated as the *intercept*.    
 
-Next, the amount of smoothing to be done needs to be calculated. Every time series behaves differently and thus require different set of smoothing parameters. There are three smoothing parameters and are the following: level($\alpha$), trend($\beta$), and seasonality($\gamma$). These parameters range from 0 to 1 inclusive, where values close to 0 represent *extreme* smoothing and values closer to 1 represent *no* smoothing. To decide the optimal values of $\alpha$, $\beta$, and $\gamma$, we used an iterative approach. We tried values from $0.01, 0.02, ..., 0.99, 1$ for each of $\alpha$, $\beta$, and $\gamma$ so a total of $10^{3} = 1,000,000$ combinations. For each of the iterations, we calculated the smallest RSME, and decided to use the parameters with the lowest RSME.
+Next, the amount of smoothing to be done needs to be calculated. Every time series behaves differently and thus require different set of smoothing parameters. There are three smoothing parameters and are the following: level($\alpha$), trend($\beta$), and seasonality($\gamma$). These parameters range from 0 to 1 inclusive, where values close to 0 represent *extreme* smoothing and values closer to 1 represent *no* smoothing. To decide the optimal values of $\alpha$, $\beta$, and $\gamma$, we used an iterative approach. We tried values from $0.05, 0.10, ..., 0.95, 1$ for each of $\alpha$, $\beta$, and $\gamma$ so a total of $20^{3} = 8,000$ combinations. For each of the iterations, we calculated the smallest RSME on the validation set, and decided to use the parameters with the lowest RSME on these data.
 
 #### Best Holt-Winters Model
 
-Our best model for Holt-Winters consists of $\alpha = 0.01, \beta = 1, \gamma = 0.04$. Because $\beta = 1$, this means that the latest values carry all of the weight. So, this means that the *level* and *seasonality* is the most important when it comes to prediction. These parameters gave us the RSME.
+Our best model for Holt-Winters consists of $\alpha = 0.25, \beta = 0.65, \gamma = 0.35$. Because $\beta = 0.65$ (higher means less smoothing) *level* and *seasonality* is the most important when it comes to prediction. These parameters are based on what gives us the lowest RMSE.
 
 ```{r}
 holt.model <- HoltWinters(x = log(bank.train), seasonal = "add",
-              alpha = 0.01, beta = 1, gamma = 0.04)
+              alpha = 0.25, beta = 0.65, gamma = 0.35)
 
 holt.winter.pred.mult <- forecast(holt.model, h = 24)
 ```
 ```{r, echo = F, fig.height = 4}
 t.new <- seq(2009,2011,length=25)[1:24]
 plot(bank,xlim=c(1987,2011), ylim = c(0, 0.1),
-     main = "Additive Triple Exponential Smoothing (RMSE = 0.00335)",
+     main = "Additive Triple Exponential Smoothing (RMSE = 0.0044)",
      ylab = "Bankruptcy Rates")
 abline(v=2009,col='blue',lty=2)
+lines(exp(fitted(holt.model)[,1])~seq(1987,2009,
+        length = 252),type='l',col=5)
 lines(exp(holt.winter.pred.mult$mean)~t.new,type='l',col='red')
 lines(exp(holt.winter.pred.mult$lower[,2])~t.new,col='green') 
 lines(exp(holt.winter.pred.mult$upper[,2])~t.new,col='green') 
-legend("topleft", legend = c("Predicted","Lower/Upper Bounds","Actual"), col = c("red","green","black"), lty = 1)
+legend("topleft", legend = c("Predicted","Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
 ```
 
-Although this was our best Holt-Winters model, the prediction intervals are quite large. This means that although our point estimates are accurate, we do not have high confidence of or results. One advantage of Holt-Winters is that it does not depend on any distribution assumptions. For interpretability purposes, this method is fairly easy to understand because it just involves exponential smoothing over and over. A disadvantage of this model is that it is heavily dependent on the most recent data in the training set. Overall, in terms of RMSE, this Holt-Winter models performs the best.
+Although this was our best Holt-Winters model, the prediction intervals are quite large. This means that although our point estimates are accurate, we do not have high confidence of or results. One advantage of Holt-Winters is that it does not depend on any distribution assumptions. For interpretability purposes, this method is fairly easy to understand because it just involves exponential smoothing over and over. A disadvantage of this model is that it is heavily dependent on the most recent data in the training set. Overall, in terms of RMSE, this Holt-Winter models are competitive with standard SARIMA and SARIMAX models, but the subsetted SARIMA model performs even better.
 
 # Choosing Final Model
 
 Model                 | Root Mean Squared Error 
 --------------------- | -----------------------
-Subset SARIMA (1,1,3)(3,1,2) | 0.00296
-SARIMAX(1,1,2)(2,1,5) | 0.00334
-Additive TES ($\alpha = 0.01, \beta = 1, \gamma = 0.04$)| 0.00335
-SARIMA (0,1,3)(2,1,3) | 0.00372
+Subset SARIMA (1,1,3)(3,1,2)~12~ | 0.00296
+SARIMAX(1,1,2)(2,1,5)~12~ | 0.00334
+Additive TES ($\alpha = 0.01, \beta = 1, \gamma = 0.04$)| 0.0044
+SARIMA (0,1,3)(2,1,3)~12~ | 0.00372
 
-In the end, we choose to select our best model based on the Root Mean Squared Error. In this case, it is our subsetted model SARIMA (0,1,3)(2,1,3), where we only chose to use points from January 1999 to December 2008. This makes sense practically because the time series behaved differently prior to the year 1999. The assumptions needed for the model are fairly met, though the Zero-Correlation assumption is on the borderline, which isn't too bad.
+Table: Comparison of RMSE for our models
+
+In the end, we choose to select our best model based on the Root Mean Squared Error. In this case, it is our subsetted model SARIMA (0,1,3)(2,1,3)~12~, where we only chose to use points from January 1999 to December 2008. This makes sense practically because the time series behaved differently prior to the year 1999. The assumptions needed for the model are fairly met, though the Zero-Correlation assumption is on the borderline, which isn't too bad.
+
+Here are the predictions intervals of our final model SARIMA (0,1,3)(2,1,3)~12~ on the unlabelled test set [2011-2012].
+
+```{r}
+final.bank.train.ts <- window(bank, start = c(1998,12), end = c(2010,12))
+```
+
+```{r,fig.height=4}
+final.sarima <- arima(final.bank.train.ts, order = c(1, 1, 3),
+    seasonal = list(order = c(3, 1, 2), period = 12), method = 'CSS')
+final.pred.subset.sarima <- forecast(final.sarima, level = 95, h = 24)
+t.new <- seq(2011,2013,length=25)[1:24]
+plot(bank,xlim=c(1998,2013), ylim = c(0, 0.08),
+     main = expression("Subset SARIMA (1,1,3)(3,1,2)"[12] *" on Test Set"),
+     ylab = "Bankruptcy Rates")
+abline(v=2011,col='blue',lty=2)
+lines(fitted(final.pred.subset.sarima)~seq(1999,2011,
+        length = 146)[1:145],type='l',col=5)
+lines(final.pred.subset.sarima$mean~t.new,type='l',col='red')
+lines(final.pred.subset.sarima$lower~t.new,col='green') 
+lines(final.pred.subset.sarima$upper~t.new,col='green') 
+legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
+```
+
+```{r}
+mon <- paste(month.abb, rep(2011:2012, each = 12))
+final.pred.subset.sarima %<>% as_data_frame() %>% mutate(
+  Month = mon
+)
+
+final.pred.subset.sarima %>% knitr::kable(
+  col.names = c("Point Forecast", "Lower Bound", "Upper Bound","Month"),
+                caption = 'Predictions from January 2011 to December 2012')
+```
+
+
+
+
