@@ -142,7 +142,7 @@ best.sarima <- arima(log(bank.train), order = c(0,1,3),
 pred.sarima <- forecast(best.sarima, level = 95, h = 24)
 t.new <- seq(2009,2011,length=25)[1:24]
 plot(bank,xlim=c(1987,2011), ylim = c(0, 0.08),
-     main = "SARIMA (0,1,3)(2,1,3)[12] (RMSE = 0.00372)",
+     main = expression("SARIMA (0,1,3)(2,1,3)"[12]* "(RMSE = 0.00372)"),
      ylab = "Bankruptcy Rates")
 abline(v=2009,col='blue',lty=2)
 lines(exp(fitted(best.sarima))~seq(1987,2009,
