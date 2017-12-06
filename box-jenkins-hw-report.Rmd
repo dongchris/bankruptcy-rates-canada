@@ -287,7 +287,7 @@ legend("topleft", legend = c("Predicted","Fitted","Lower/Upper Bounds","Actual")
 
 Although this was our best Holt-Winters model, the prediction intervals are quite large. This means that although our point estimates are accurate, we do not have high confidence of or results. One advantage of Holt-Winters is that it does not depend on any distribution assumptions. For interpretability purposes, this method is fairly easy to understand because it just involves exponential smoothing over and over. A disadvantage of this model is that it is heavily dependent on the most recent data in the training set. Overall, in terms of RMSE, this Holt-Winter models are competitive with standard SARIMA and SARIMAX models, but the subsetted SARIMA model performs even better.
 
-# Choosing Final Model
+# Conclusion
 
 Model                 | Root Mean Squared Error 
 --------------------- | -----------------------
