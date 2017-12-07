@@ -13,13 +13,13 @@ knitr::opts_chunk$set(echo = F, warning = F, message = F, cache = T)
 
 Box-Jenkin models involves statistical theory and modeling to analyze and forecast time series data. The naming standard for the various types of time series models consists of acronyms defined as the following:
 
-- **S:** *Seasonal* effects - in our case, monthly
-- **AR:** *Autoregressive* is a stochastic process in which future predictions are based on a weighted sum of previous observations
-- **I:** *Integrated* involves ordinary differencing, or subtracting observations from the previous observation in time, to make a time series stationary (mean, variance, autocorrelation constant over time)
-- **MA:** *Moving Average* is an average over many past observations
-- **X:** e*X*ogenous variables are external variables that influence the response variable but the responsen does not influence them (Example: BART ridership may be affected by weather, but weather does not depend on BART ridership)
+- **S:** **S**easonal effects - in our case, monthly
+- **AR:** **A**uto**r**egressive is a stochastic process in which future predictions are based on a weighted sum of previous observations
+- **I:** **I**ntegrated involves ordinary differencing, or subtracting observations from the previous observation in time, to make a time series stationary (mean, variance, autocorrelation constant over time)
+- **MA:** **M**oving **A**verage is an average over many past observations
+- **X:** e**X**ogenous variables are external variables that influence the response variable but the responsen does not influence them (Example: BART ridership may be affected by weather, but weather does not depend on BART ridership)
 
-So, SARIMAX means *Seasonal Autoregressive Integrated Moving Average with Exogenous Variables*
+So, SARIMAX means **S**easonal **A**uto**r**egressive **I**ntegrated **M**oving **A**verage with e**X**ogenous Variables.
 
 In this part of the project we will explore ARIMA, SARIMA and SARIMAX models in order to predict bankruptcy rate. ARIMA, or in general, SARIMA models are univariate models which Wdepend on previous time series data and try to predict future values. Through this part we will check these models with their assumptions. SARIMAX on the other hand is a multivariate time series model which has the SARIMA component but also regresses on the given multivariate data at time $t$.
 
@@ -33,6 +33,7 @@ library(forecast)
 library(tidyverse)
 library(magrittr)
 library(ggcorrplot)
+library(vars)
 
 train <- read_csv("train.csv")
 test <- read_csv("test.csv")
@@ -102,7 +103,7 @@ par(mfrow=c(1,1))
 
 We observe that highest correlation between housing index and bankruptcy happens to be with 23 lagged version of housing index. This means that there might be a pattern that bankruptcy follows from housing index after 23 months of occurence. Of course this is just a hypothetical assumptions which needs to be tried out. Hence, we can try out different lagged versions of housing index and use it in our SARIMAX model. Another assumptions we are making with SARIMAX is that any regressed variable during modeling is an exogenous variable, meaning that they have a uni-directional effect on dependent variable bankruptcy rate but not the other way around.
 
-## SARIMA MODEL (Univariate Bankruptcy)
+# SARIMA
 
 Every predictive modeling task has a evaluation metric in order to assess the performance of different type of models and in order to pick the best available model that we hope to generalize to our hypothesis. Also, during these predictive modeling tasks we create a hold-out set which is also our validation set. We will use the last 2 years of our data [2009-2010] in order to assess our models with the evaluation metric root mean squared error (RMSE). Another important point which shouldn't be forgotten is that one should be careful about not overfitting to the validation set. So, here we will also care about less complex models which will helps us avoid overfitting and as well as models that give good performance in validation set meaning that they generalize good enough to reflect the pattern on unseen data.
 
@@ -153,7 +154,7 @@ lines(exp(pred.sarima$upper)~t.new,col='green')
 legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
 ```
 
-# Subset SARIMA model
+# Subset SARIMA
 
 In this part, we will try out a hypothesis that our data in fact is not stable, in other words it has a clear and instant pattern change around after about 10 years. To overcome this instant change, we will take the time series that is after 10 years and use this subset of data in order to come up with a better predictive model. Anyway, our main goal here is to forecast the future values of the time series as well as possible. And our hypothesis is that having this subset will provide us a more generalizable model with better performance on unseen data. One drawback is that we can only compare this method in terms of RMSE with our previous models that used full data, and cannot use a formal test such as likelihood ratio test to compare.
 
@@ -249,6 +250,12 @@ valid_rmse <- function(model, valid_ts){
 
 Again do a grid search over combinations of candidate sarima parameters. Our final best model is SARIMAX(1,1,2)(2,1,5)~12~, with a rmse of ~0.00334 by using exogenous variables; population and house_price_index. Overall, this provides a better performance than all of the non-subsetted models with this extra information. We did try SARIMAX with our subsetted time series, but it did worse than the non-subsetted model.
 
+# VAR - Vector Autoregression
+
+Vector Autoregressive models are used for multivariate time series. The model assumes that the variables are endogenous - they influence each other, so in this model each variable is a linear function of past lags of itself and past lags of the other variables. 
+
+Since we have observed high correlation between bankrupcy rate and population and house price index, and we believe the influence between bankrupcy rate and both variables are bidirectional, we will fit a VAR model. We also observed some seasonality in the time series, so we added month as a exogenous variable. After iteration through different lag values, the best model with VAR method is VAR(4) model, with population and house price index as covariate, and month as exogenous variable. The RMSPE on the validation set is 0.004019.
+
 # Holt-Winters Methods
 
 Holt-Winters Methods involves an exponentially weighted moving average. In the context of the Canadian bankruptcy rates, our model's predictions are based on averages of previously observed bankruptcy rates, with more weight on recent data. In other words, last month is a better indicator than say, 10 years ago. This makes sense because bankruptcy rates is most certainly going to change over time. Triple Exponential Smoothing is appropriate for forecasting monthly bankruptcy rates for Canada because there is both **trend** and **seasonality**. But, what exactly does do these terms mean? 
@@ -285,7 +292,7 @@ lines(exp(holt.winter.pred.mult$upper[,2])~t.new,col='green')
 legend("topleft", legend = c("Predicted","Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
 ```
 
-Although this was our best Holt-Winters model, the prediction intervals are quite large. This means that although our point estimates are accurate, we do not have high confidence of or results. One advantage of Holt-Winters is that it does not depend on any distribution assumptions. For interpretability purposes, this method is fairly easy to understand because it just involves exponential smoothing over and over. A disadvantage of this model is that it is heavily dependent on the most recent data in the training set. Overall, in terms of RMSE, this Holt-Winter models are competitive with standard SARIMA and SARIMAX models, but the subsetted SARIMA model performs even better.
+Although this was our best Holt-Winters model, the prediction intervals are quite large. This means that although our point estimates are accurate, we do not have high confidence of our results. One advantage of Holt-Winters is that it does not depend on any distribution assumptions. For interpretability purposes, this method is fairly easy to understand because it just involves exponential smoothing over and over. A disadvantage of this model is that it is heavily dependent on the most recent data in the training set. Overall, in terms of RMSE, this Holt-Winter models are competitive with standard SARIMA and SARIMAX models, but the subsetted SARIMA model performs even better.
 
 # Conclusion
 
@@ -300,7 +307,7 @@ Table: Comparison of RMSE for our models
 
 In the end, we choose to select our best model based on the Root Mean Squared Error. In this case, it is our subsetted model SARIMA (0,1,3)(2,1,3)~12~, where we only chose to use points from January 1999 to December 2008. This makes sense practically because the time series behaved differently prior to the year 1999. The assumptions needed for the model are fairly met, though the Zero-Correlation assumption is on the borderline, which isn't too bad.
 
-Here are the predictions intervals of our final model SARIMA (0,1,3)(2,1,3)~12~ on the unlabelled test set [2011-2012].
+Finally, we use our final model SARIMA (0,1,3)(2,1,3)~12~ to forecast on the unlabelled test set [2011-2012].
 
 ```{r}
 final.bank.train.ts <- window(bank, start = c(1998,12), end = c(2010,12))
