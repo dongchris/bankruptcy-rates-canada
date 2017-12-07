@@ -18,11 +18,11 @@ Holt-Winters Methods involves an exponentially weighted moving average. In the c
 
 Furthermore, because we decided to explore the logarithm of the bankruptcy rates, we are more concerned about *multiplicative* rather than *additive* methods. The overall concept behind triple exponential smoothing is to apply exponential smoothing and incorporating the level, trend, and seasonal components. While the trend is the *slope*, the level can be treated as the *intercept*.    
 
-Next, the amount of smoothing to be done needs to be calculated. Every time series behaves differently and thus require different set of smoothing parameters. There are three smoothing parameters and are the following: level($\alpha$), trend($\beta$), and seasonality($\gamma$). These parameters range from 0 to 1 inclusive, where values close to 0 represent *extreme* smoothing and values closer to 1 represent *no* smoothing. To decide the optimal values of $\alpha$, $\beta$, and $\gamma$, we used an iterative approach. We tried values from $0.01, 0.02, ..., 0.99, 1$ for each of $\alpha$, $\beta$, and $\gamma$ so a total of $10^{3} = 1,000,000$ combinations. 
+Next, the amount of smoothing to be done needs to be calculated. Every time series behaves differently and thus require different set of smoothing parameters. There are three smoothing parameters and are the following: level($\alpha$), trend($\beta$), and seasonality($\gamma$). These parameters range from 0 to 1 inclusive, where values close to 0 represent *extreme* smoothing and values closer to 1 represent *no* smoothing. To decide the optimal values of $\alpha$, $\beta$, and $\gamma$, we used an iterative approach. We tried values from $0.01, 0.02, ..., 0.99, 1$ for each of $\alpha$, $\beta$, and $\gamma$ so a total of $10^{3} = 1,000,000$ combinations. For each of the iterations, we calculated the smallest root mean squared error (RSME), and decided to use the parameters with the lowest RSME.
 
 #### Best Holt-Winters Model
 
-Our best model for Holt-Winters consists of $\alpha = 0.01, \beta = 1, \gamma = 0.04$. Because $\beta = 1$, this means that the latest values carry all of the weight. So, this means that the *level* and *seasonality* is the most important when it comes to prediction. These parameters gave us the smallest root mean squared error (RSME).
+Our best model for Holt-Winters consists of $\alpha = 0.01, \beta = 1, \gamma = 0.04$. Because $\beta = 1$, this means that the latest values carry all of the weight. So, this means that the *level* and *seasonality* is the most important when it comes to prediction. These parameters gave us the RSME.
 
 ```{r, warning = F, message = F, include = F}
 library(tseries)

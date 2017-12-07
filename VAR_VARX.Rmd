@@ -1,0 +1,67 @@
+---
+title: "VAR"
+author: "Chen Wang"
+date: "12/5/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(forecast)
+library(tseries)
+library(lmtest)
+library(car)
+library(vars)
+```
+
+
+```{r}
+#load data
+train <- read.csv('/users/grace/desktop/msan/timeseries/project/train.csv', header = T)
+train <- train[1:288,]
+
+bankrupcy <-ts(train$Bankruptcy_Rate, start = c(1987, 1), end =c(2010, 12), frequency = 12)
+hpi <- ts(train$House_Price_Index, start = c(1987, 1), end =c(2010, 12), frequency = 12)
+unemployment <- ts(train$Unemployment_Rate, start = c(1987, 1), end =c(2010, 12), frequency = 12)
+population <- ts(train$Population, start = c(1987, 1), end =c(2010, 12), frequency = 12)
+
+#Create Training and Validation Set
+bankrupcy.train <- window(bankrupcy, start = c(1987,1), end = c(2008,12))
+bankrupcy.val <- window(bankrupcy, start = c(2009,1), end = c(2010,12))
+hpi.train <- window(hpi, start = c(1987,1), end = c(2008,12))
+hpi.val <- window(hpi, start = c(2009,1), end = c(2010,12))
+unemployment.train <- window(unemployment, start = c(1987,1), end = c(2008,12))
+unemployment.val <- window(unemployment, start = c(2009,1), end = c(2010,12))
+population.train <- window(population, start = c(1987,1), end = c(2008,12))
+population.val<- window(population, start = c(2009,1), end = c(2010,12))
+```
+VAR - Vector Autoregression
+
+Vector Autoregressive models are used for multivariate time series. The model assumes that the variables are endogenous - they influence each other, so in this model each variable is a linear function of past lags of itself and past lags of the other variables. 
+
+Since we have observed high correlation between bankrupcy rate and population and house price index, and we believe the influence between bankrupcy rate and both variables are bidirectional, we will fit a VAR model. We also observed some seasonality in the time series, so we added month as a exogenous variable. After iteration through different lag values, the best model with VAR method is VAR(4) model, with population and house price index as covariate, and month as exogenous variable. The RMSPE on the validation set is 0.004019
+
+```{r}
+#VAR full period
+m.var <- VAR(y = data.frame(Y1=bankrupcy.train, Y2=hpi.train, Y3=population.train), lag.max =10, ic = "AIC")
+#summary(m.var)
+
+f.var <- predict(m.var, n.ahead = 24)
+
+sqrt(mean((f.var$fcst$Y1[,1] - bankrupcy.val)^2))
+
+
+#VARX full period
+month.train <- as.data.frame(model.matrix(~factor(rep(seq(1,12), 2009-1987))))[c(2:12)]
+colnames(month.train)<- c("Feb","Mar","April",'May','June','July','Aug','Sep','Oct','Nov','Dec')
+month.val <- as.data.frame(model.matrix(~factor(rep(seq(1,12), 2))))[c(2:12)]
+colnames(month.val)<- c("Feb","Mar","April",'May','June','July','Aug','Sep','Oct','Nov','Dec')
+
+m.varx <- VAR(y = data.frame(Y1=bankrupcy.train, Y2=hpi.train, Y3=population.train), lag.max =4, ic = "AIC", exogen = month.train)
+#summary(m.varx)
+
+f.varx <- predict(m.varx, n.ahead = 24, dumvar = month.val)
+
+sqrt(mean((f.varx$fcst$Y1[,1] - bankrupcy.val)^2))
+```
+
