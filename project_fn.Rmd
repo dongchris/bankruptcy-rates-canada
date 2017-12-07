@@ -1,0 +1,338 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+header-includes:
+  - \usepackage[labelformat=empty]{caption}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F, cache = T)
+```
+
+
+
+```{r, warning = F, message = F, include = F}
+library(tseries)
+library(car)
+library(forecast)
+library(tidyverse)
+library(magrittr)
+library(ggcorrplot)
+
+train <- read_csv("/users/grace/desktop/msan/timeseries/project/train.csv")
+test <- read_csv("/users/grace/desktop/msan/timeseries/project/test.csv")
+
+train %<>% na.omit()
+bank <-ts(train$Bankruptcy_Rate, start = c(1987, 1), end =c(2010, 12), frequency = 12)
+house <-ts(train$House_Price_Index, start = c(1987, 1), 
+           end =c(2010, 12), frequency = 12)
+unemployment <- ts(train$Unemployment_Rate, start = c(1987, 1), 
+           end =c(2010, 12), frequency = 12)
+population <- ts(train$Population, start = c(1987, 1), 
+           end =c(2010, 12), frequency = 12)
+
+bank.train <- window(bank, start = c(1987,1), end = c(2008,12))
+bank.test <- window(bank, start = c(2009,1), end = c(2010,12))
+house.train <- window(house, start = c(1987,1), end = c(2008,12))
+house.test <- window(house, start = c(2009,1), end = c(2010,12))
+unemployment.train <- window(unemployment, start = c(1987,1), end = c(2008,12))
+unemployment.test <- window(unemployment, start = c(2009,1), end = c(2010,12))
+population.train <- window(population, start = c(1987,1), end = c(2008,12))
+population.test <- window(population, start = c(2009,1), end = c(2010,12))
+```
+
+
+
+#Introduction:
+
+This project aims to build a predictive model to forecast monthly bankruptcy rates in Canada for the year of 2011 and 2012 with highest possible accuracy, given monthly data from January 1987 to December 2010 on bankruptcy rate, unemployment rate, population, and housing price index in Canada. then selected the optimal model and used it for forecasting. 
+
+In this report, we will first explore the data, and discuss the available modeling approaches, including SARIMA, SARIMAX, Holt-Winters, and VAR.  We will also explain the approach to select our best predictive model and present the forecasting results from our optimal model.
+
+#Data Overview:
+The available dataset consists of monthly data from January 1987 to December 2010 on the 4 variables: bankruptcy rate, unemployment rate, population, and house price index. The four plots below correspond to each of the variable over time.
+ 
+```{r, echo = F, fig.height = 3.5, warning = F, message = F}
+library(timetk)
+library(gridExtra)
+library(scales)
+df_bank <- tk_tbl(bank)
+df_house <- tk_tbl(house)
+df_unemployment <- tk_tbl(unemployment)
+df_population <- tk_tbl(population)
+p1 <- ggplot(df_bank, aes(x=index, y = value )) + geom_line() + xlab("Year") +
+  ylab("Bankruptcy Rates")
+p2 <- ggplot(df_house, aes(x=index, y = value )) + geom_line() + xlab("Year") +
+  ylab("Housing Price Index")
+p3 <- ggplot(df_unemployment, aes(x=index, y = value )) + geom_line() + xlab("Year") +
+  ylab("Unemployment Rates")
+p4 <- ggplot(df_population, aes(x=index, y = value )) + geom_line() + xlab("Year") +
+  ylab("Population")
+grid.arrange(p1,p2,p3,p4)
+```
+
+To explore the relationship between the 4 variables, we constructed a correlation matrix. We can see that bankruptcy rate is highly correlated with population and is somewhat correlated with house price index. Bankruptcy rate has a smaller, and negative, correlation with unemployment rate. Variables with medium to high correlation are of interest because they can possibly be used as covariates to help accurately predict bankruptcy rates.
+
+```{r, echo = F, fig.height = 3.75}
+par(mfrow=c(1,2))
+train[,-1] %>% na.omit() %>% cor() %>% ggcorrplot(lab = T) + ggplot2::theme(legend.position = 'top', legend.text = element_text(size =2),
+              axis.text = element_text(size = 2)) 
+
+lagged.cor <- c()
+
+h = 50
+for (i in (seq(h))){
+  lagged_house <- lag(train$House_Price_Index, n = i)
+  cor.i <- cor(lagged_house, train$Bankruptcy_Rate, use = 'complete.obs')
+  lagged.cor <- c(lagged.cor, cor.i)
+}
+
+best.idx <- which.max(lagged.cor)
+plot(lagged.cor, ylab = "Lagged Correlation")
+points(best.idx, lagged.cor[best.idx], col='red')
+title(paste('Best Lag:' , best.idx))
+par(mfrow=c(1,1))
+```
+
+More over, we ovserved from the individual time series plot that bankrupcy rate is probably has even a higher correlation with lagged values of ``House_Price_Index``. So, here we plot the change in correlation between bankruptcy and housing index by different lagged values of housing index. Basically what we do here is to shift housing index to the right.
+
+We found that highest correlation between housing index and bankruptcy happens to be with 23 lagged version of housing index. This means that there might be a pattern that bankruptcy follows from housing index after 23 months of occurence. Of course this is just a hypothetical assumptions which needs to be tried out. Hence, we can try out different lagged versions of housing index and use it as a covariate in out multivariate time series model.
+
+
+#Method
+
+In order to find the best model to predict 2011-2012 Canadian bankruptcy rates, we split our training data into training and validation set. The training set consists of observations from January 1987 to December 2008, and is used for constructing the models. The last 2-year of data (48 observations) is held out to determine the predictive accuracy of the model. 
+
+We explored the following methods for modeling the bankruptcy rate:
+
+•	Box-Jenkins Methods: including ARIMA, SARIMA and SARIMAX, this approach works by removing the trend and seasonality through differencing the data and modeling the transformed data. 
+
+•	Holt-Winters model:  this approach works by assigning exponentially decreasing weights to older observations. Considering the trend and seasonality pattern observed in the data, we used triple exponential smoothing for modeling.
+
+•	VAR: this approach works by treating the other influential variables as endogenous variable - they influence bankruptcy rate and bankruptcy rate influences them.
+
+For each method, the potential models are mainly compared on the basis of log likelihood, AIC and Root Mean Square Error (RMSE) on the held out data, an optimal model was selected based on its performance on the validation set. Another important point which shouldn't be forgotten is that one should be careful about not overfitting to the validation set. So, here we will also care about less complex models which will helps us avoid overfitting and as well as models that give good performance in validation set meaning that they generalize good enough to reflect the pattern on unseen data.
+
+
+# Box-Jenkins Methods
+
+Box-Jenkin models involves statistical theory and modeling to analyze and forecast time series data. The naming standard for the various types of time series models consists of acronyms defined as the following:
+
+- **S:** *Seasonal* effects - in our case, monthly
+- **AR:** *Autoregressive* is a stochastic process in which future predictions are based on a weighted sum of previous observations
+- **I:** *Integrated* involves ordinary differencing, or subtracting observations from the previous observation in time, to make a time series stationary (mean, variance, autocorrelation constant over time)
+- **MA:** *Moving Average* is an average over many past observations
+- **X:** e*X*ogenous variables are external variables that influence the response variable but the responsen does not influence them (Example: BART ridership may be affected by weather, but weather does not depend on BART ridership)
+
+So, SARIMAX means *Seasonal Autoregressive Integrated Moving Average with Exogenous Variables*
+
+In this part of the project we will explore SARIMA and SARIMAX models in order to predict bankruptcy rate. SARIMA models are univariate models which depend on previous observations and try to predict future values. SARIMAX on the other hand is a multivariate time series model which has the SARIMA component but also regresses on the given multivariate data at time $t$.
+
+
+## SARIMA MODEL (Univariate Bankruptcy)
+
+As we can see from the plot of bankruptcy time series, the fluctuation in the data seems to increase over time, so we applied a log transform to our data to stablize the variance. In order to find the best fit models, we performed a grid search. For each SARIMA model, we calculated the RSME after forecasting 2 years ahead (24 data points). Then, for the 3 best models with lowest predictive errors, we formed log-likelihood ratio tests , which is a formal test for determining whether or not one model is better than another at a specified statistically significant level. We strive our models to be as simple as possible to avoid overfitting unseen data. The lower the number of parameters, the simpler the model will be. 
+
+The best SARIMA model on the full data that we ended up choosing is SARIMA (0,1,3)(2,1,3)~12~. 
+
+```{r, include = F, echo = F, fig.height = 4}
+best.sarima <- arima(log(bank.train), order = c(0,1,3), 
+    seasonal = list(order = c(2,1,3), period = 12), method = "ML")
+pred.sarima <- forecast(best.sarima, level = 95, h = 24)
+t.new <- seq(2009,2011,length=25)[1:24]
+plot(bank,xlim=c(1987,2011), ylim = c(0, 0.08),
+     main = expression("SARIMA (0,1,3)(2,1,3)"[12]* "(RMSE = 0.00372)"),
+     ylab = "Bankruptcy Rates")
+abline(v=2009,col='blue',lty=2)
+lines(exp(fitted(best.sarima))~seq(1987,2009,
+        length = 265)[1:264],type='l',col=5)
+lines(exp(pred.sarima$mean)~t.new,type='l',col='red')
+lines(exp(pred.sarima$lower)~t.new,col='green') 
+lines(exp(pred.sarima$upper)~t.new,col='green') 
+legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
+```
+
+## Subset SARIMA model
+
+In this part, we will try out a hypothesis that our data has two different patterns, in other words it has a clear and instant pattern change around 1998 as we can observe in the plot. To overcome this instant change, we will take the time series that is after 10 years and use this subset of data in order to come up with a better predictive model. Anyway, our main goal here is to forecast the future values of the time series as well as possible. And our hypothesis is that having this subset will provide us a more generalizable model with better performance on unseen data. One drawback is that we can only compare this method in terms of RMSE with our previous models that used full data, and cannot use a formal test such as likelihood ratio test to compare.
+
+```{r}
+out_years = 12
+sub.bank.train.ts <- window(bank, start = c(1998,12), end = c(2008,12))
+df_subset <- tk_tbl(sub.bank.train.ts)
+```
+
+We will take data starting December 1998, this was determined after several experiments. We didn't apply any transforms since data seems to have a constant variance over time.
+We perform another grid search and observe that best parameters are (1, 1, 3)(3, 1, 2)~12~ with RMSE of ~ 0.0029 which is lower than our SARIMA model on the full data. Another important note is that since our main goal is to come up with the best predictive model we choose our optimization method as Least Squares Estimation (LSE) rather than Maximun Likelihood Estimation (MLE).
+
+The plot below shows the fit of our best SARIMA model on the training set and prediction on validation set.
+
+```{r,fig.height=4}
+subset.sarima <- arima(sub.bank.train.ts, order = c(1, 1, 3),
+    seasonal = list(order = c(3, 1, 2), period = 12), method = 'CSS')
+pred.subset.sarima <- forecast(subset.sarima, level = 95, h = 24)
+t.new <- seq(2009,2011,length=25)[1:24]
+plot(bank,xlim=c(1998,2011), ylim = c(0, 0.08),
+     main = expression("Subset SARIMA (1,1,3)(3,1,2)"[12] *"(RMSE = 0.00296)"),
+     ylab = "Bankruptcy Rates")
+abline(v=2009,col='blue',lty=2)
+lines(fitted(subset.sarima)~seq(1999,2009,
+        length = 122)[1:121],type='l',col=5)
+lines(pred.subset.sarima$mean~t.new,type='l',col='red')
+lines(pred.subset.sarima$lower~t.new,col='green') 
+lines(pred.subset.sarima$upper~t.new,col='green') 
+legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
+```
+
+## Checking Box-Jenkins Assumptions
+
+Box-Jenkins models relies on the following assumptions regarding the residuals (difference between actual - predicted) for the models to be valid. 
+
+- Zero-Mean: the residuals have a mean of zero
+- Homoscedasticity: the residuals have constant variance
+- Zero-Correlation: the residuals are uncorrelated
+- Normality: the residuals are normally distributed (no need to check for our subset model which is based on Least Squares rather than Maximum Likelihood Estimation)
+
+Through formal hypothesis testing, both our SARIMA models satisfied the assumptions. However, SARIMA (1,1,3)(3,1,2)~12~ model trained on the subset of data is on the borderline of passing the Zero-Correlation assumption test.
+
+
+# SARIMAX
+
+In this part we will use exgenous data, assuming that there is a uni-directional relationship, meaning only independent variables effect bankruptcy not the other way around. We tried lagged 23 value of housing index, since it holds the highest correlation with bankcruptcy but it doesn't seem to perform better. 
+
+```{r}
+out_years <- 0 # years to exclude
+
+h <- 0 # lag to use
+train$House_Price_Index <- lag(train$House_Price_Index, n = h)
+exo_endo_train <- train[(h + 1) + (out_years*12):263, ]
+exo_endo_valid <- train[265:288, ]
+```
+
+
+```{r}
+valid_rmse <- function(model, valid_ts){
+  valid.preds <- forecast(model, h = length(valid_ts),xreg = exo_endo_valid[c("Population", "House_Price_Index")])
+  valid.rmse <- rmse(as.numeric(valid.preds$mean), valid_ts)
+  return(valid.rmse)
+}
+```
+
+Again do a grid search over combinations of candidate sarima parameters. Our final best model is SARIMAX(1,1,2)(2,1,5)~12~, with a rmse of ~0.00334 by using exogenous variables; population and house_price_index. Overall, this provides a better performance than all of the non-subsetted models with this extra information. We did try SARIMAX with our subsetted time series, but it did worse than the non-subsetted model.
+
+# Holt-Winters Methods
+
+Holt-Winters Methods involves an exponentially weighted moving average. In the context of the Canadian bankruptcy rates, our model's predictions are based on averages of previously observed bankruptcy rates, with more weight on recent data. In other words, last month is a better indicator than say, 10 years ago. This makes sense because bankruptcy rates is most certainly going to change over time. Triple Exponential Smoothing is appropriate for forecasting monthly bankruptcy rates for Canada because there is both **trend** and **seasonality**. 
+
+**Trend:** A trend exists if there is a long-term increase or decrease in bankruptcy rates. 
+
+**Seasonality:** Seasonality is when the time series exhibits similar behavior at regular intervals, or *seasons*. In our scenario, bankruptcy rates are recorded every month, and therefore the period of a season is 12 months (1 year).
+
+Furthermore, we choose to use an *additive* method because the size of the peaks are roughly the same throughout the time series. There are three parameters to be estimated: $\alpha$, $\beta$, and $\gamma$. These parameters range from 0 to 1 inclusive. To decide the optimal values of the parameters, we used an iterative approach. For each of the iterations, we calculated the smallest RSME on the validation set, and decided to use the parameters with the lowest RSME on these data.
+
+Our best model for Holt-Winters consists of $\alpha = 0.25, \beta = 0.65, \gamma = 0.35$. 
+```{r}
+holt.model <- HoltWinters(x = log(bank.train), seasonal = "add",
+              alpha = 0.25, beta = 0.65, gamma = 0.35)
+
+holt.winter.pred.mult <- forecast(holt.model, h = 24)
+```
+```{r, echo = F, fig.height = 4}
+t.new <- seq(2009,2011,length=25)[1:24]
+plot(bank,xlim=c(1987,2011), ylim = c(0, 0.1),
+     main = "Additive Triple Exponential Smoothing (RMSE = 0.0044)",
+     ylab = "Bankruptcy Rates")
+abline(v=2009,col='blue',lty=2)
+lines(exp(fitted(holt.model)[,1])~seq(1987,2009,
+        length = 252),type='l',col=5)
+lines(exp(holt.winter.pred.mult$mean)~t.new,type='l',col='red')
+lines(exp(holt.winter.pred.mult$lower[,2])~t.new,col='green') 
+lines(exp(holt.winter.pred.mult$upper[,2])~t.new,col='green') 
+legend("topleft", legend = c("Predicted","Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
+```
+
+Although this was our best Holt-Winters model, the prediction intervals are quite large. This means that although our point estimates are accurate, we do not have high confidence of or results. One advantage of Holt-Winters is that it does not depend on any distribution assumptions. For interpretability purposes, this method is fairly easy to understand because it just involves exponential smoothing over and over. A disadvantage of this model is that it is heavily dependent on the most recent data in the training set. Overall, in terms of RMSE, this Holt-Winter models are competitive with standard SARIMA and SARIMAX models, but the subsetted SARIMA model performs even better.
+
+
+#VAR - Vector Autoregression
+
+Vector Autoregressive models are used for multivariate time series. The model assumes that the variables are endogenous - they influence each other, so in this model each variable is a linear function of past lags of itself and past lags of the other variables. 
+
+Since we have observed high correlation between bankrupcy rate and population and house price index, and we believe the influence between bankrupcy rate and both variables are bidirectional, we will fit a VAR model. We also observed some seasonality in the time series, so we added month as a exogenous variable. After iteration through different lag values, the best model with VAR method is VAR(4) model, with population and house price index as covariate, and month as exogenous variable. The RMSPE on the validation set is 0.004019. 
+
+```{r, include = F}
+#VAR full period
+m.var <- VAR(y = data.frame(Y1=bank.train, Y2=house.train, Y3=population.train), lag.max =10, ic = "AIC")
+#summary(m.var)
+
+f.var <- predict(m.var, n.ahead = 24)
+
+sqrt(mean((f.var$fcst$Y1[,1] - bank.test)^2))
+
+
+#VARX full period
+month.train <- as.data.frame(model.matrix(~factor(rep(seq(1,12), 2009-1987))))[c(2:12)]
+colnames(month.train)<- c("Feb","Mar","April",'May','June','July','Aug','Sep','Oct','Nov','Dec')
+month.val <- as.data.frame(model.matrix(~factor(rep(seq(1,12), 2))))[c(2:12)]
+colnames(month.val)<- c("Feb","Mar","April",'May','June','July','Aug','Sep','Oct','Nov','Dec')
+
+m.varx <- VAR(y = data.frame(Y1=bank.train, Y2=house.train, Y3=population.train), lag.max =4, ic = "AIC", exogen = month.train)
+#summary(m.varx)
+
+f.varx <- predict(m.varx, n.ahead = 24, dumvar = month.val)
+
+sqrt(mean((f.varx$fcst$Y1[,1] - bank.test)^2))
+```
+
+
+
+
+
+# Conclusion
+
+Model                 | Root Mean Squared Error 
+--------------------- | -----------------------
+Subset SARIMA (1,1,3)(3,1,2)~12~ | 0.00296
+SARIMAX(1,1,2)(2,1,5)~12~ | 0.00334
+Additive TES ($\alpha = 0.25, \beta = 0.65, \gamma = 0.35$)| 0.0044
+SARIMA (0,1,3)(2,1,3)~12~ | 0.00372
+VAR(4) | 0.004019
+
+Table: Comparison of RMSE on validation set for our models
+
+In the end, we choose to select our best model based on the Root Mean Squared Error. In this case, it is our subsetted model SARIMA (0,1,3)(2,1,3)~12~, where we only chose to use points from January 1999 to December 2008. This makes sense practically because the time series behaved differently prior to the year 1999. The assumptions needed for the model are fairly met, though the Zero-Correlation assumption is on the borderline, which isn't too bad.
+
+Here are the predictions intervals of our final model SARIMA (0,1,3)(2,1,3)~12~ on the unlabelled test set [2011-2012].
+
+```{r}
+final.bank.train.ts <- window(bank, start = c(1998,12), end = c(2010,12))
+```
+
+```{r,fig.height=4}
+final.sarima <- arima(final.bank.train.ts, order = c(1, 1, 3),
+    seasonal = list(order = c(3, 1, 2), period = 12), method = 'CSS')
+final.pred.subset.sarima <- forecast(final.sarima, level = 95, h = 24)
+t.new <- seq(2011,2013,length=25)[1:24]
+plot(bank,xlim=c(1998,2013), ylim = c(0, 0.08),
+     main = expression("Subset SARIMA (1,1,3)(3,1,2)"[12] *" on Test Set"),
+     ylab = "Bankruptcy Rates")
+abline(v=2011,col='blue',lty=2)
+lines(fitted(final.pred.subset.sarima)~seq(1999,2011,
+        length = 146)[1:145],type='l',col=5)
+lines(final.pred.subset.sarima$mean~t.new,type='l',col='red')
+lines(final.pred.subset.sarima$lower~t.new,col='green') 
+lines(final.pred.subset.sarima$upper~t.new,col='green') 
+legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
+```
+
+```{r}
+mon <- paste(month.abb, rep(2011:2012, each = 12))
+final.pred.subset.sarima %<>% as_data_frame() %>% mutate(
+  Month = mon
+)
+
+final.pred.subset.sarima %>% knitr::kable(
+  col.names = c("Point Forecast", "Lower Bound", "Upper Bound","Month"),
+                caption = 'Predictions from January 2011 to December 2012')
+```
