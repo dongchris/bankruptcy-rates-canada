@@ -19,9 +19,10 @@ library(forecast)
 library(tidyverse)
 library(magrittr)
 library(ggcorrplot)
+library(vars)
 
-train <- read_csv("/users/grace/desktop/msan/timeseries/project/train.csv")
-test <- read_csv("/users/grace/desktop/msan/timeseries/project/test.csv")
+train <- read_csv("train.csv")
+test <- read_csv("test.csv")
 
 train %<>% na.omit()
 bank <-ts(train$Bankruptcy_Rate, start = c(1987, 1), end =c(2010, 12), frequency = 12)
@@ -44,13 +45,13 @@ population.test <- window(population, start = c(2009,1), end = c(2010,12))
 
 
 
-#Introduction:
+# Introduction
 
 This project aims to build a predictive model to forecast monthly bankruptcy rates in Canada for the year of 2011 and 2012 with highest possible accuracy, given monthly data from January 1987 to December 2010 on bankruptcy rate, unemployment rate, population, and housing price index in Canada. Then, the selected best model will be used for forecasting. 
 
 In this report, we will first explore the data, and discuss the available modeling approaches, including SARIMA, SARIMAX, Holt-Winters, and VAR.  We will also explain the approach to select our best predictive model and present the forecasting results from our optimal model.
 
-#Data Overview:
+# Data Overview
 The available dataset consists of monthly data from January 1987 to December 2010 on the 4 variables: bankruptcy rate, unemployment rate, population, and house price index. The four plots below correspond to each of the variable over time.
  
 ```{r, echo = F, fig.height = 3.5, warning = F, message = F}
@@ -100,7 +101,7 @@ More over, we ovserved from the individual time series plot that bankrupcy rate 
 We found that highest correlation between housing index and bankruptcy happens to be with 23 lagged version of housing index. This means that there might be a pattern that bankruptcy follows from housing index after 23 months of occurence. Of course this is just a hypothetical assumptions which needs to be tried out. Hence, we can try out different lagged versions of housing index and use it as a covariate in out multivariate time series model.
 
 
-#Method
+# Method
 
 In order to find the best model to predict 2011-2012 Canadian bankruptcy rates, we split our training data into training and validation set. The training set consists of observations from January 1987 to December 2008, and is used for constructing the models. The last 2-year of data (48 observations) is held out to determine the predictive accuracy of the model. 
 
@@ -112,25 +113,25 @@ We explored the following methods for modeling the bankruptcy rate:
 
 •	VAR: this approach works by treating the other influential variables as endogenous variable - they influence bankruptcy rate and bankruptcy rate influences them.
 
-For each method, the potential models are mainly compared on the basis of log likelihood, AIC and Root Mean Square Error (RMSE) on the held out data, an optimal model was selected based on its performance on the validation set. Another important point which shouldn't be forgotten is that one should be careful about not overfitting to the validation set. So, here we will also care about less complex models which will helps us avoid overfitting and as well as models that give good performance in validation set meaning that they generalize good enough to reflect the pattern on unseen data.
+For each method, the potential models are mainly compared on the basis of log likelihood, AIC (two goodness-of-fit measures) and Root Mean Square Error (RMSE) on the held out data, an optimal model was selected based on its performance on the validation set. Another important point which shouldn't be forgotten is that one should be careful about not overfitting to the validation set. So, here we will also care about less complex models which will helps us avoid overfitting and as well as models that give good performance in validation set meaning that they generalize good enough to reflect the pattern on unseen data.
 
 
 # Box-Jenkins Methods
 
 Box-Jenkin models involves statistical theory and modeling to analyze and forecast time series data. The naming standard for the various types of time series models consists of acronyms defined as the following:
 
-- **S:** *Seasonal* effects - in our case, monthly
-- **AR:** *Autoregressive* is a stochastic process in which future predictions are based on a weighted sum of previous observations
-- **I:** *Integrated* involves ordinary differencing, or subtracting observations from the previous observation in time, to make a time series stationary (mean, variance, autocorrelation constant over time)
-- **MA:** *Moving Average* is an average over many past observations
-- **X:** e*X*ogenous variables are external variables that influence the response variable but the responsen does not influence them (Example: BART ridership may be affected by weather, but weather does not depend on BART ridership)
+- **S:** **S**easonal effects - in our case, monthly
+- **AR:** **A**uto**r**egressive is a stochastic process in which future predictions are based on a weighted sum of previous observations
+- **I:** **I**ntegrated involves ordinary differencing, or subtracting observations from the previous observation in time, to make a time series stationary (mean, variance, autocorrelation constant over time)
+- **MA:** **M**oving **A**verage is an average over many past observations
+- **X:** e**X**ogenous variables are external variables that influence the response variable but the responsen does not influence them (Example: BART ridership may be affected by weather, but weather does not depend on BART ridership)
 
-So, SARIMAX means *Seasonal Autoregressive Integrated Moving Average with Exogenous Variables*
+So, SARIMAX means **S**easonal **A**uto**r**egressive **I**ntegrated **M**oving **A**verage with e**X**ogenous Variables.
 
 In this part of the project we will explore SARIMA and SARIMAX models in order to predict bankruptcy rate. SARIMA models are univariate models which depend on previous observations and try to predict future values. SARIMAX on the other hand is a multivariate time series model which has the SARIMA component but also regresses on the given multivariate data at time $t$.
 
 
-## SARIMA MODEL (Univariate Bankruptcy)
+# SARIMA Model
 
 As we can see from the plot of bankruptcy time series, the fluctuation in the data seems to increase over time, so we applied a log transform to our data to stablize the variance. In order to find the best fit models, we performed a grid search. For each SARIMA model, we calculated the RSME after forecasting 2 years ahead (24 data points). Then, for the 3 best models with lowest predictive errors, we formed log-likelihood ratio tests , which is a formal test for determining whether or not one model is better than another at a specified statistically significant level. We strive our models to be as simple as possible to avoid overfitting unseen data. The lower the number of parameters, the simpler the model will be. 
 
@@ -153,7 +154,7 @@ lines(exp(pred.sarima$upper)~t.new,col='green')
 legend("topleft", legend = c("Predicted", "Fitted","Lower/Upper Bounds","Actual"), col = c("red",5,"green","black"), lty = 1)
 ```
 
-## Subset SARIMA model
+# Subset SARIMA Model
 
 In this part, we will try out a hypothesis that our data has two different patterns, in other words it has a clear and instant pattern change around 1998 as we can observe in the plot. To overcome this instant change, we will take the time series that is after 10 years and use this subset of data in order to come up with a better predictive model. Anyway, our main goal here is to forecast the future values of the time series as well as possible. And our hypothesis is that having this subset will provide us a more generalizable model with better performance on unseen data. One drawback is that we can only compare this method in terms of RMSE with our previous models that used full data, and cannot use a formal test such as likelihood ratio test to compare.
 
@@ -219,7 +220,7 @@ valid_rmse <- function(model, valid_ts){
 }
 ```
 
-Again do a grid search over combinations of candidate sarima parameters. Our final best model is SARIMAX(1,1,2)(2,1,5)~12~, with a rmse of ~0.00334 by using exogenous variables; population and house_price_index. Overall, this provides a better performance than all of the non-subsetted models with this extra information. We did try SARIMAX with our subsetted time series, but it did worse than the non-subsetted model.
+Again do a grid search over combinations of candidate sarima parameters. Our final best model is SARIMAX(1,1,2)(2,1,5)~12~, with a rmse of ~0.00334 by using exogenous variables; population and house price index. Overall, this provides a better performance than all of the non-subsetted models with this extra information. We did try SARIMAX with our subsetted time series, but it did worse than the non-subsetted model.
 
 # Holt-Winters Methods
 
@@ -285,10 +286,6 @@ f.varx <- predict(m.varx, n.ahead = 24, dumvar = month.val)
 sqrt(mean((f.varx$fcst$Y1[,1] - bank.test)^2))
 ```
 
-
-
-
-
 # Conclusion
 
 Model                 | Root Mean Squared Error 
@@ -301,7 +298,7 @@ VAR(4) | 0.004019
 
 Table: Comparison of RMSE on validation set for our models
 
-In the end, we choose to select our best model based on the Root Mean Squared Error. In this case, it is our subsetted model SARIMA (0,1,3)(2,1,3)~12~, where we only chose to use points from January 1999 to December 2008. This makes sense practically because the time series behaved differently prior to the year 1999. The assumptions needed for the model are fairly met, though the Zero-Correlation assumption is on the borderline, which isn't too bad.
+In the end, we choose to select our best model based on the Root Mean Squared Error. In this case, it is our subsetted model SARIMA (0,1,3)(2,1,3)~12~, where we only chose to use points from December 1998 to December 2008. This makes sense practically because the time series behaved differently prior to the year 1999. The assumptions needed for the model are fairly met, though the Zero-Correlation assumption is on the borderline, which isn't too bad.
 
 Here are the predictions intervals of our final model SARIMA (0,1,3)(2,1,3)~12~ on the unlabelled test set [2011-2012].
 
