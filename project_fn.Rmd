@@ -46,7 +46,7 @@ population.test <- window(population, start = c(2009,1), end = c(2010,12))
 
 #Introduction:
 
-This project aims to build a predictive model to forecast monthly bankruptcy rates in Canada for the year of 2011 and 2012 with highest possible accuracy, given monthly data from January 1987 to December 2010 on bankruptcy rate, unemployment rate, population, and housing price index in Canada. then selected the optimal model and used it for forecasting. 
+This project aims to build a predictive model to forecast monthly bankruptcy rates in Canada for the year of 2011 and 2012 with highest possible accuracy, given monthly data from January 1987 to December 2010 on bankruptcy rate, unemployment rate, population, and housing price index in Canada. Then, the selected best model will be used for forecasting. 
 
 In this report, we will first explore the data, and discuss the available modeling approaches, including SARIMA, SARIMAX, Holt-Winters, and VAR.  We will also explain the approach to select our best predictive model and present the forecasting results from our optimal model.
 
