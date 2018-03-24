@@ -1,9 +1,5 @@
-# time_series_group1
+# Forecasting Canadian Bankruptcy Rates
 
-test
-test
+Authors: Chris Dong, Chen Wang, Jason Carpenter, Kerem Turgutlu
 
-<!--stackedit_data:
-eyJoaXN0b3J5IjpbLTE5MzE2OTY2OTYsLTEwMTkwOTkyODhdfQ
-==
--->
+Our final report is under `Team 1.1.pdf`
